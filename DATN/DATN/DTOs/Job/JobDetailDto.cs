@@ -1,0 +1,70 @@
+namespace DATN.DTOs.Job;
+
+/// <summary>
+/// DTO để hiển thị chi tiết job
+/// </summary>
+public class JobDetailDto
+{
+    public Guid JobId { get; set; }
+    
+    public string Title { get; set; } = string.Empty;
+    
+    public string CompanyName { get; set; } = string.Empty; // Lấy từ User.FullName
+
+    public Guid? DepartmentId { get; set; }
+
+    public string? DepartmentName { get; set; }
+    
+    public decimal? SalaryMin { get; set; }
+    
+    public decimal? SalaryMax { get; set; }
+    
+    public string? Location { get; set; }
+    
+    public string? EmploymentType { get; set; }
+
+    public string? ExperienceLevel { get; set; }
+
+    public string? SeniorityLevel { get; set; }
+
+    public string Status { get; set; }
+    public DateTime? Deadline { get; set; }
+    public DateTime CreatedAt { get; set; }
+ // Map từ Job.ClosedAt
+    
+    public DateTime CreatedDate { get; set; } // Map từ Job.CreatedAt
+    
+    public List<string> Skills { get; set; } = new List<string>(); // Danh sách tên skills
+    
+    public List<Guid> SkillIds { get; set; } = new List<Guid>(); // Danh sách ID skills (cho việc update)
+    
+    // Thông tin chi tiết thêm
+    public string? Description { get; set; } // Mô tả công việc đầy đủ
+    
+    public string? Requirements { get; set; } // Yêu cầu công việc
+    
+    public string? Benefits { get; set; } // Quyền lợi
+    
+    public string? ContactEmail { get; set; } // Email liên hệ (từ User)
+    
+    public int? NumberOfPositions { get; set; } // Số lượng tuyển
+
+    public string? CampaignFormSource { get; set; }
+    public string? GoogleFormId { get; set; }
+    public string? GoogleFormPublicUrl { get; set; }
+    public string? GoogleFormEditUrl { get; set; }
+    public string? QrCodeImagePath { get; set; }
+
+    public string RecruitmentTrack { get; set; } = "PROFESSIONAL";
+    public int TargetQuantity { get; set; } = 50;
+    public int HiredCount { get; set; } = 0;
+    public int WaitlistBufferPercent { get; set; } = 15;
+    public int CurrentScoringWeightVersion { get; set; } = 1;
+    public string? GoogleFormUrl { get; set; }
+    public string RequisitionStatus { get; set; } = "Approved";
+    public Guid? RequestedByUserId { get; set; }
+    public Guid? ApprovedByUserId { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public string? RequisitionNote { get; set; }
+    public bool RequireNightShift { get; set; } = false;
+}

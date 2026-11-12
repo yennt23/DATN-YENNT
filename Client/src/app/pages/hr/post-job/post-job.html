@@ -1,0 +1,334 @@
+<div
+  class="bg-white dark:bg-[#1a202c] rounded-xl shadow-lg border border-gray-100 dark:border-gray-800 overflow-hidden">
+  <div class="border-b border-gray-100 dark:border-gray-800 p-8 pb-6">
+    <h2 class="text-2xl font-bold text-[#0d121b] dark:text-white mb-2">{{ isEditMode ? 'Cập Nhật Chiến Dịch Tuyển Dụng KCN' : 'Tạo Chiến Dịch Tuyển Dụng KCN' }}</h2>
+    <p class="text-[#4c669a] dark:text-gray-400">Thiết lập chiến dịch tuyển công nhân cho khu công nghiệp và đồng bộ luồng nhận hồ sơ từ form quét mã QR.</p>
+  </div>
+  <form class="p-8 pt-6" [formGroup]="jobForm" (ngSubmit)="onSubmit($event)">
+    <div class="mb-6 flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+      <div>
+        <p class="text-sm font-semibold text-blue-800">Biểu mẫu tinh gọn</p>
+        <p class="text-xs text-blue-600">Đang hiển thị nhóm trường cốt lõi cho tuyển dụng KCN. Trường nâng cao có thể mở khi cần.</p>
+      </div>
+      <button type="button" (click)="toggleAdvancedFields()"
+        class="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors">
+        <span class="material-symbols-outlined text-[16px]">tune</span>
+        {{ showAdvancedFields ? 'Ẩn nâng cao' : 'Hiện nâng cao' }}
+      </button>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+      <div class="col-span-1 md:col-span-2 space-y-2">
+        <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200" for="job-title">Tên Vị Trí <span
+            class="text-red-500">*</span></label>
+        <input formControlName="title"
+          class="w-full rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark px-4 py-3 text-sm text-[#0d121b] dark:text-white placeholder:text-[#4c669a] focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all"
+          [class.border-red-500]="jobForm.get('title')?.invalid && jobForm.get('title')?.touched" id="job-title"
+          placeholder="VD: Công nhân lắp ráp điện tử - Chuyền A" type="text" />
+        <div *ngIf="jobForm.get('title')?.invalid && jobForm.get('title')?.touched" class="text-sm text-red-500 mt-1">
+          <span *ngIf="jobForm.get('title')?.errors?.['required']">Tên vị trí tuyển dụng là bắt buộc</span>
+          <span *ngIf="jobForm.get('title')?.errors?.['minlength']">Tên vị trí phải từ 10 ký tự trở lên</span>
+          <span *ngIf="jobForm.get('title')?.errors?.['maxlength']">Tên vị trí không được vượt quá 200 ký tự</span>
+        </div>
+      </div>
+      <div class="col-span-1 space-y-2">
+        <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200" for="department-id">Phân xưởng/Phòng ban <span class="text-red-500">*</span></label>
+        <div class="relative">
+          <select formControlName="departmentId"
+            class="w-full appearance-none rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark px-4 py-3 text-sm text-[#0d121b] dark:text-white focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all"
+            [class.border-red-500]="jobForm.get('departmentId')?.invalid && jobForm.get('departmentId')?.touched"
+            id="department-id">
+            <option value="" disabled>Chọn phân xưởng/phòng ban</option>
+            <option *ngFor="let department of departments" [value]="department.departmentId">
+              {{ department.departmentName }} ({{ department.departmentCode }})
+            </option>
+          </select>
+          <div class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#4c669a]">
+            <span class="material-symbols-outlined text-[20px]">expand_more</span>
+          </div>
+        </div>
+        <div *ngIf="jobForm.get('departmentId')?.invalid && jobForm.get('departmentId')?.touched"
+          class="text-sm text-red-500 mt-1">Vui lòng chọn phân xưởng/phòng ban phụ trách chiến dịch</div>
+      </div>
+      <div class="col-span-1 space-y-2">
+        <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200" for="employment-type">Loại Hình
+          <span class="text-red-500">*</span></label>
+        <div class="relative">
+          <select formControlName="employmentType"
+            class="w-full appearance-none rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark px-4 py-3 text-sm text-[#0d121b] dark:text-white focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all"
+            [class.border-red-500]="jobForm.get('employmentType')?.invalid && jobForm.get('employmentType')?.touched"
+            id="employment-type">
+            <option disabled="" value="">Chọn loại hình</option>
+            <option *ngFor="let option of employmentTypeOptions" [value]="option.value">{{ option.label }}</option>
+          </select>
+          <div class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#4c669a]">
+            <span class="material-symbols-outlined text-[20px]">expand_more</span>
+          </div>
+        </div>
+        <div *ngIf="jobForm.get('employmentType')?.invalid && jobForm.get('employmentType')?.touched"
+          class="text-sm text-red-500 mt-1">Vui lòng chọn loại hình công việc</div>
+      </div>
+      <div class="col-span-1 space-y-2">
+        <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200" for="experience-level">Kinh nghiệm
+          <span class="text-red-500">*</span></label>
+        <div class="relative">
+          <select formControlName="experienceLevel"
+            class="w-full appearance-none rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark px-4 py-3 text-sm text-[#0d121b] dark:text-white focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all"
+            [class.border-red-500]="jobForm.get('experienceLevel')?.invalid && jobForm.get('experienceLevel')?.touched"
+            id="experience-level">
+            <option value="" disabled>Chọn mức kinh nghiệm</option>
+            <option *ngFor="let option of experienceOptions" [value]="option">{{ option }}</option>
+          </select>
+          <div class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#4c669a]">
+            <span class="material-symbols-outlined text-[20px]">expand_more</span>
+          </div>
+        </div>
+        <div *ngIf="jobForm.get('experienceLevel')?.invalid && jobForm.get('experienceLevel')?.touched"
+          class="text-sm text-red-500 mt-1">Vui lòng chọn mức kinh nghiệm</div>
+      </div>
+      <div class="col-span-1 space-y-2">
+        <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200" for="seniority-level">Ca làm việc
+          <span class="text-red-500">*</span></label>
+        <div class="relative">
+          <select formControlName="seniorityLevel"
+            class="w-full appearance-none rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark px-4 py-3 text-sm text-[#0d121b] dark:text-white focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all"
+            [class.border-red-500]="jobForm.get('seniorityLevel')?.invalid && jobForm.get('seniorityLevel')?.touched"
+            id="seniority-level">
+            <option value="" disabled>Chọn ca làm việc</option>
+            <option *ngFor="let option of shiftOptions" [value]="option">{{ option }}</option>
+          </select>
+          <div class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#4c669a]">
+            <span class="material-symbols-outlined text-[20px]">expand_more</span>
+          </div>
+        </div>
+        <div *ngIf="jobForm.get('seniorityLevel')?.invalid && jobForm.get('seniorityLevel')?.touched"
+          class="text-sm text-red-500 mt-1">Vui lòng chọn ca làm việc</div>
+      </div>
+      <div class="col-span-1 space-y-2">
+        <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200" for="province">
+          Tỉnh/Thành phố <span class="text-red-500">*</span>
+        </label>
+        <div class="relative">
+          <select formControlName="province"
+            class="w-full appearance-none rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark px-4 py-3 pr-10 text-sm text-[#0d121b] dark:text-white focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all"
+            [class.border-red-500]="jobForm.get('province')?.invalid && jobForm.get('province')?.touched" id="province">
+            <option [ngValue]="null">Chọn tỉnh/thành phố</option>
+            <option *ngFor="let province of provinces$ | async" [value]="province.code">
+              {{ province.name }}
+            </option>
+          </select>
+          <div class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#4c669a]">
+            <span class="material-symbols-outlined text-[20px]">expand_more</span>
+          </div>
+        </div>
+        <div *ngIf="jobForm.get('province')?.invalid && jobForm.get('province')?.touched"
+          class="text-sm text-red-500 mt-1">Vui lòng chọn Tỉnh/Thành phố</div>
+      </div>
+      <div class="col-span-1 space-y-2" *ngIf="showAdvancedFields">
+        <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200" for="ward">
+          Phường/Xã
+        </label>
+        <div class="relative">
+          <select formControlName="ward"
+            class="w-full appearance-none rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark px-4 py-3 pr-10 text-sm text-[#0d121b] dark:text-white focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            id="ward">
+            <option [ngValue]="null">Chọn phường/xã</option>
+            <option *ngFor="let ward of wards$ | async" [value]="ward.code">
+              {{ ward.name }}
+            </option>
+          </select>
+          <div class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#4c669a]">
+            <span class="material-symbols-outlined text-[20px]">expand_more</span>
+          </div>
+        </div>
+      </div>
+      <div class="col-span-1 space-y-2">
+        <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200">Mức Lương (Tháng - VNĐ)</label>
+        <div class="flex items-center gap-3">
+          <div class="relative w-full">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-[#4c669a]">₫</span>
+            <input formControlName="salaryMin"
+              class="w-full rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark pl-8 pr-4 py-3 text-sm text-[#0d121b] dark:text-white placeholder:text-[#4c669a] focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all"
+              placeholder="Tối thiểu" type="number" />
+          </div>
+          <span class="text-[#4c669a]">-</span>
+          <div class="relative w-full">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-[#4c669a]">₫</span>
+            <input formControlName="salaryMax"
+              class="w-full rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark pl-8 pr-4 py-3 text-sm text-[#0d121b] dark:text-white placeholder:text-[#4c669a] focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all"
+              [class.border-red-500]="jobForm.get('salaryMax')?.errors?.['salaryRange'] && jobForm.get('salaryMax')?.touched"
+              placeholder="Tối đa" type="number" />
+          </div>
+        </div>
+        <div *ngIf="jobForm.get('salaryMax')?.errors?.['salaryRange'] && jobForm.get('salaryMax')?.touched"
+          class="text-sm text-red-500 mt-1">Lương tối đa phải lớn hơn hoặc bằng lương tối thiểu</div>
+        <div
+          *ngIf="(jobForm.get('salaryMin')?.errors?.['min'] && jobForm.get('salaryMin')?.touched) || (jobForm.get('salaryMax')?.errors?.['min'] && jobForm.get('salaryMax')?.touched)"
+          class="text-sm text-red-500 mt-1">Mức lương không được là số âm</div>
+      </div>
+      <div class="col-span-1 space-y-2">
+        <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200" for="deadline">Hạn Nộp Hồ Sơ <span class="text-red-500">*</span></label>
+        <div class="relative">
+          <div class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#4c669a]">
+            <span class="material-symbols-outlined text-[20px]">calendar_today</span>
+          </div>
+          <input formControlName="deadline"
+            class="w-full rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark pl-10 pr-4 py-3 text-sm text-[#0d121b] dark:text-white placeholder:text-[#4c669a] focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all text-gray-500 [&::-webkit-calendar-picker-indicator]:opacity-70"
+            [class.border-red-500]="jobForm.get('deadline')?.invalid && jobForm.get('deadline')?.touched"
+            style="color-scheme: light;" id="deadline" type="date" />
+        </div>
+        <div *ngIf="jobForm.get('deadline')?.invalid && jobForm.get('deadline')?.touched"
+          class="text-sm text-red-500 mt-1">
+          <span *ngIf="jobForm.get('deadline')?.errors?.['required']">Hạn nộp hồ sơ là bắt buộc</span>
+          <span *ngIf="jobForm.get('deadline')?.errors?.['futureDate']">Hạn nộp hồ sơ phải từ ngày mai trở đi</span>
+        </div>
+      </div>
+      <!-- Gợi ý nội dung chiến dịch -->
+      <div *ngIf="showAdvancedFields" class="col-span-1 md:col-span-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-5 space-y-3">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+            <span class="material-symbols-outlined text-[18px]">edit_note</span>
+          </div>
+          <div>
+            <p class="text-sm font-semibold text-slate-800 dark:text-slate-200">Gợi ý nội dung tin tuyển dụng</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Nhập nhu cầu chính để tự động gợi ý mô tả, yêu cầu và quyền lợi phù hợp với vị trí</p>
+          </div>
+        </div>
+        <div class="flex gap-3 items-end">
+          <div class="flex-1 space-y-1">
+            <label class="text-xs font-medium text-slate-600 dark:text-slate-300">Nhu cầu chính (tuỳ chọn)</label>
+            <input
+              [(ngModel)]="keyRequirements"
+              [ngModelOptions]="{standalone: true}"
+              class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm text-slate-800 dark:text-white placeholder:text-slate-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-400 focus:outline-none transition-all"
+              placeholder="VD: Tuyển 80 CN lắp ráp, chấp nhận tăng ca, ưu tiên đã làm chuyền điện tử..."
+              type="text" />
+          </div>
+          <button
+            type="button"
+            (click)="onAiGenerateJd()"
+            [disabled]="isGeneratingJd"
+            class="flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 px-5 py-2.5 text-sm font-semibold text-white shadow-xs transition-all disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap">
+            <span *ngIf="!isGeneratingJd" class="material-symbols-outlined text-[18px]">auto_fix_high</span>
+            <span *ngIf="isGeneratingJd" class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+            {{ isGeneratingJd ? 'Đang tạo...' : 'Gợi ý tự động' }}
+          </button>
+        </div>
+      </div>
+      <!-- End AI JD Generator Card -->
+
+      <div class="col-span-1 md:col-span-2 space-y-2">
+        <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200" for="description">Mô Tả Công Việc
+          <span class="text-red-500">*</span></label>
+        <textarea formControlName="description"
+          class="w-full rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark px-4 py-3 text-sm text-[#0d121b] dark:text-white placeholder:text-[#4c669a] focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all min-h-[150px] resize-y"
+          [class.border-red-500]="jobForm.get('description')?.invalid && jobForm.get('description')?.touched"
+          id="description" placeholder="Mô tả công việc chính, môi trường xưởng và kế hoạch tuyển theo đợt..." rows="6"></textarea>
+        <div *ngIf="jobForm.get('description')?.invalid && jobForm.get('description')?.touched"
+          class="text-sm text-red-500 mt-1">
+          <span *ngIf="jobForm.get('description')?.errors?.['required']">Mô tả công việc là bắt buộc</span>
+          <span *ngIf="jobForm.get('description')?.errors?.['minlength']">Mô tả phải từ 50 ký tự trở lên</span>
+          <span *ngIf="jobForm.get('description')?.errors?.['maxlength']">Mô tả không được vượt quá 4000 ký tự</span>
+        </div>
+      </div>
+      <div class="col-span-1 md:col-span-2 space-y-2" *ngIf="showAdvancedFields">
+        <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200" for="requirements">Yêu Cầu</label>
+        <textarea formControlName="requirements"
+          class="w-full rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark px-4 py-3 text-sm text-[#0d121b] dark:text-white placeholder:text-[#4c669a] focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all min-h-[120px] resize-y"
+          [class.border-red-500]="jobForm.get('requirements')?.invalid && jobForm.get('requirements')?.touched"
+          id="requirements" placeholder="VD: Sức khỏe tốt, làm ca đêm được, ca làm việc: Xoay 3 ca, ưu tiên đã làm nhà máy" rows="5"></textarea>
+        <div *ngIf="jobForm.get('requirements')?.errors?.['maxlength'] && jobForm.get('requirements')?.touched"
+          class="text-sm text-red-500 mt-1">Yêu cầu công việc không được vượt quá 4000 ký tự</div>
+      </div>
+      <div class="col-span-1 md:col-span-2 space-y-2" *ngIf="showAdvancedFields">
+        <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200" for="benefits">Quyền Lợi</label>
+        <textarea formControlName="benefits"
+          class="w-full rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark px-4 py-3 text-sm text-[#0d121b] dark:text-white placeholder:text-[#4c669a] focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all min-h-[120px] resize-y"
+          [class.border-red-500]="jobForm.get('benefits')?.invalid && jobForm.get('benefits')?.touched" id="benefits"
+          placeholder="Liệt kê quyền lợi và phúc lợi" rows="5"></textarea>
+        <div *ngIf="jobForm.get('benefits')?.errors?.['maxlength'] && jobForm.get('benefits')?.touched"
+          class="text-sm text-red-500 mt-1">Quyền lợi công việc không được vượt quá 4000 ký tự</div>
+      </div>
+      <div class="col-span-1 space-y-2">
+        <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200" for="numberOfPositions">Số Lượng
+          Tuyển</label>
+        <input formControlName="numberOfPositions"
+          class="w-full rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark px-4 py-3 text-sm text-[#0d121b] dark:text-white placeholder:text-[#4c669a] focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all"
+          [class.border-red-500]="jobForm.get('numberOfPositions')?.invalid && jobForm.get('numberOfPositions')?.touched"
+          id="numberOfPositions" placeholder="VD: 2" type="number" min="1" />
+        <div *ngIf="jobForm.get('numberOfPositions')?.errors?.['min'] && jobForm.get('numberOfPositions')?.touched"
+          class="text-sm text-red-500 mt-1">Số lượng tuyển phải từ 1 trở lên</div>
+      </div>
+      <div class="col-span-1 md:col-span-2 space-y-3">
+        <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200">Tay Nghề/Kỹ Năng Công Việc <span
+            class="text-red-500">*</span></label>
+        <div class="flex flex-wrap gap-2 p-2 rounded-lg" [class.border]="skillsError"
+          [class.border-red-500]="skillsError" [class.bg-red-50]="skillsError">
+          <!-- Hiển thị skills từ API -->
+          <button *ngFor="let skill of skills" (click)="toggleSkill(skill.skillId)"
+            [class.bg-primary]="isSkillSelected(skill.skillId)" [class.text-white]="isSkillSelected(skill.skillId)"
+            [class.bg-gray-100]="!isSkillSelected(skill.skillId)"
+            [class.dark:bg-gray-800]="!isSkillSelected(skill.skillId)"
+            [class.text-gray-600]="!isSkillSelected(skill.skillId)"
+            [class.dark:text-gray-300]="!isSkillSelected(skill.skillId)"
+            class="group flex items-center gap-1 rounded-full px-4 py-2 text-sm font-medium shadow-sm hover:bg-blue-700 hover:text-white transition-all"
+            type="button">
+            <span>{{ skill.name }}</span>
+            <span class="material-symbols-outlined text-[16px]"
+              [class.opacity-0]="!isSkillSelected(skill.skillId)">check</span>
+          </button>
+        </div>
+        <div *ngIf="skillsError" class="text-sm text-red-500 mt-1">Vui lòng chọn ít nhất 1 kỹ năng</div>
+      </div>
+      <!-- Checkbox Ràng buộc ca đêm & Định biên ngân sách -->
+      <div class="col-span-1 md:col-span-2 space-y-3">
+        <label class="flex items-start gap-3 rounded-xl border border-purple-200 bg-purple-50/70 dark:bg-purple-950/30 dark:border-purple-800 px-4 py-3 cursor-pointer">
+          <input type="checkbox" formControlName="requireNightShift" class="mt-1 h-4 w-4 rounded text-purple-600 focus:ring-purple-500" />
+          <span>
+            <span class="block text-sm font-bold text-purple-900 dark:text-purple-200">🌙 Có làm ca đêm (22h-06h) / Công việc nặng nhọc (Chặn lao động dưới 18 tuổi)</span>
+            <span class="block text-xs text-purple-700 dark:text-purple-300 mt-0.5">Tuân thủ Bộ luật Lao động: Hệ thống sẽ tự động chặn cứng ứng viên dưới 18 tuổi nộp vào chiến dịch này.</span>
+          </span>
+        </label>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+            Lý do đề xuất tuyển dụng (Quản đốc phân xưởng đề xuất định biên):
+          </label>
+          <input type="text" formControlName="requisitionNote" placeholder="VD: Mở chuyền đóng gói mới số 4, bù 15 nhân sự nghỉ việc..."
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500" />
+        </div>
+      </div>
+    </div>
+    <div
+      class="mt-10 flex flex-col-reverse md:flex-row items-center justify-end gap-4 border-t border-gray-100 dark:border-gray-800 pt-6">
+      <button (click)="onCancel()"
+        class="w-full md:w-auto rounded-lg px-6 py-3 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        type="button">
+        Hủy
+      </button>
+      <button *ngIf="isEditMode && jobId" type="button" (click)="openExistingCampaignQr()"
+        class="w-full md:w-auto flex items-center justify-center gap-2 rounded-lg border border-emerald-200 px-6 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-50">
+        <span class="material-symbols-outlined text-[20px]">qr_code_2</span>
+        Google Form + QR
+      </button>
+      <button [disabled]="isSubmitting"
+        class="w-full md:w-auto flex items-center justify-center gap-2 rounded-lg bg-primary px-8 py-3 text-sm font-bold text-white shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 dark:focus:ring-offset-[#1a202c] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        type="submit">
+        <span class="material-symbols-outlined text-[20px]" *ngIf="!isSubmitting">{{ isEditMode ? 'save' : 'send'
+          }}</span>
+        <span class="material-symbols-outlined text-[20px] animate-spin" *ngIf="isSubmitting">progress_activity</span>
+        {{ isSubmitting ? (isEditMode ? 'Đang cập nhật...' : 'Đang tạo chiến dịch...') : (isEditMode ? 'Cập Nhật Chiến Dịch' : 'Tạo Chiến Dịch') }}
+      </button>
+    </div>
+  </form>
+  <app-campaign-qr-modal
+    [campaign]="campaignQr"
+    [regenerating]="regeneratingQr"
+    (closed)="closeCampaignQr()"
+    (regenerate)="regenerateCampaignQr()">
+  </app-campaign-qr-modal>
+  <div class="px-8 pb-6 text-center border-t border-gray-100 dark:border-gray-800 mt-6 pt-6">
+    <p class="text-sm text-[#4c669a]">Cần trợ giúp? <a class="text-primary hover:underline" href="#">Xem tài liệu</a>
+      hoặc liên hệ hỗ trợ.</p>
+  </div>
+</div>

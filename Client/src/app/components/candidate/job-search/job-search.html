@@ -1,0 +1,221 @@
+<app-candidate-header></app-candidate-header>
+
+<div class="min-h-screen bg-gray-50 py-8 font-sans">
+    <div class="container mx-auto px-4 md:px-10 lg:px-40">
+        <div class="flex flex-col lg:flex-row gap-8">
+            <!-- Sidebar (Filters) -->
+            <aside class="w-full lg:w-1/4">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 sticky top-24">
+                    <div class="flex items-center gap-2 mb-6 pb-4 border-b border-slate-100">
+                        <span class="material-symbols-outlined text-primary">filter_list</span>
+                        <h3 class="font-bold text-lg text-slate-800">Bộ lọc tìm kiếm</h3>
+                    </div>
+
+                    <!-- Keyword -->
+                    <div class="mb-5">
+                        <label class="block text-sm font-semibold text-slate-700 mb-2">Từ khóa</label>
+                        <div class="relative">
+                            <span
+                                class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl pointer-events-none">search</span>
+                            <input type="text" [(ngModel)]="filter.keyword" (ngModelChange)="onKeywordChange($event)"
+                                placeholder="Tên công việc, kỹ năng..."
+                                class="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-sm transition-all" />
+                        </div>
+                    </div>
+
+                    <!-- Location -->
+                    <div class="mb-5">
+                        <label class="block text-sm font-semibold text-slate-700 mb-2">Địa điểm</label>
+                        <div class="relative">
+                            <span
+                                class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl pointer-events-none">location_on</span>
+                            <select [(ngModel)]="filter.location" (change)="onSearch()"
+                                class="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-sm appearance-none bg-white cursor-pointer transition-all">
+                                <option value="">Tất cả địa điểm</option>
+                                <option *ngFor="let province of provinces" [value]="province.name">{{ province.name }}
+                                </option>
+                            </select>
+                            <span
+                                class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                        </div>
+                    </div>
+
+                    <!-- Job Type -->
+                    <div class="mb-5">
+                        <label class="block text-sm font-semibold text-slate-700 mb-3">Loại công việc</label>
+                        <div class="space-y-2.5">
+                            <label class="flex items-center gap-3 cursor-pointer group">
+                                <input type="checkbox" [checked]="isJobTypeSelected('Full-time')"
+                                    (change)="onJobTypeChange('Full-time', $event)"
+                                    class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/20 cursor-pointer" />
+                                <span
+                                    class="text-sm text-slate-600 group-hover:text-primary transition-colors">Full-time</span>
+                            </label>
+                            <label class="flex items-center gap-3 cursor-pointer group">
+                                <input type="checkbox" [checked]="isJobTypeSelected('Part-time')"
+                                    (change)="onJobTypeChange('Part-time', $event)"
+                                    class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/20 cursor-pointer" />
+                                <span
+                                    class="text-sm text-slate-600 group-hover:text-primary transition-colors">Part-time</span>
+                            </label>
+                            <label class="flex items-center gap-3 cursor-pointer group">
+                                <input type="checkbox" [checked]="isJobTypeSelected('Remote')"
+                                    (change)="onJobTypeChange('Remote', $event)"
+                                    class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/20 cursor-pointer" />
+                                <span
+                                    class="text-sm text-slate-600 group-hover:text-primary transition-colors">Remote</span>
+                            </label>
+                            <label class="flex items-center gap-3 cursor-pointer group">
+                                <input type="checkbox" [checked]="isJobTypeSelected('Internship')"
+                                    (change)="onJobTypeChange('Internship', $event)"
+                                    class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/20 cursor-pointer" />
+                                <span
+                                    class="text-sm text-slate-600 group-hover:text-primary transition-colors">Internship</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Min Salary -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-semibold text-slate-700 mb-2">Khoảng lương tối thiểu
+                            ($)</label>
+                        <div class="relative">
+                            <span
+                                class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl pointer-events-none">attach_money</span>
+                            <input type="number" [(ngModel)]="filter.minSalary" (change)="onSearch()"
+                                placeholder="Ví dụ: 500"
+                                class="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-sm transition-all" />
+                        </div>
+                    </div>
+
+                    <button (click)="onSearch()"
+                        class="w-full py-3 bg-primary text-white font-semibold rounded-lg hover:bg-blue-600 active:transform active:scale-[0.98] transition-all shadow-sm hover:shadow-md">
+                        Tìm kiếm
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="w-full lg:w-3/4">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-slate-800">Kết quả tìm kiếm</h2>
+                    <span class="text-sm text-slate-500">Hiển thị {{ pagedJobs.length }} / {{ jobs.length }} công
+                        việc</span>
+                </div>
+
+                <!-- Loading -->
+                <div *ngIf="loading" class="flex flex-col items-center justify-center py-20">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
+                    <p class="text-slate-500">Đang tìm kiếm cơ hội tốt nhất cho bạn...</p>
+                </div>
+
+                <!-- Empty State -->
+                <div *ngIf="!loading && jobs.length === 0"
+                    class="flex flex-col items-center justify-center py-20 bg-white rounded-xl border border-slate-200 border-dashed">
+                    <span class="material-symbols-outlined text-6xl text-slate-300 mb-4">search_off</span>
+                    <p class="text-slate-500 text-lg font-medium">Không tìm thấy công việc nào phù hợp.</p>
+                    <p class="text-slate-400 text-sm mt-1">Hãy thử thay đổi từ khóa hoặc bộ lọc tìm kiếm.</p>
+                </div>
+
+                <!-- Job List -->
+                <div *ngIf="!loading && jobs.length > 0" class="grid gap-4">
+                    <div *ngFor="let job of pagedJobs"
+                        class="bg-white p-6 rounded-xl border border-slate-200 hover:shadow-lg hover:border-primary/30 transition-all duration-300 group">
+                        <div class="flex items-start justify-between">
+                            <div class="flex gap-4">
+                                <div
+                                    class="w-16 h-16 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
+                                    <span class="material-symbols-outlined text-3xl text-primary">business_center</span>
+                                </div>
+                                <div>
+                                    <a [routerLink]="['/candidate/job-detail', job.jobId]"
+                                        class="hover:text-primary transition-colors">
+                                        <h3
+                                            class="text-lg font-bold text-slate-800 mb-1 group-hover:text-primary transition-colors">
+                                            {{ job.title }}</h3>
+                                    </a>
+                                    <p class="text-slate-600 font-medium text-sm mb-2">{{ job.companyName }}</p>
+
+                                    <div class="flex flex-wrap gap-x-4 gap-y-2 text-sm text-slate-500">
+                                        <span
+                                            class="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded text-xs font-medium text-slate-600">
+                                            <span class="material-symbols-outlined text-sm">location_on</span>
+                                            {{ job.location }}
+                                        </span>
+                                        <span
+                                            class="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded text-xs font-medium text-slate-600">
+                                            <span class="material-symbols-outlined text-sm">schedule</span>
+                                            {{ job.jobType }}
+                                        </span>
+                                        <span
+                                            class="flex items-center gap-1.5 bg-green-50 px-2 py-1 rounded text-xs font-bold text-green-700">
+                                            <span class="material-symbols-outlined text-sm">attach_money</span>
+                                            {{ formatSalary(job.salaryMin, job.salaryMax) }}
+                                        </span>
+                                    </div>
+
+                                    <div class="flex gap-2 mt-3">
+                                        <span *ngFor="let skill of job.skills"
+                                            class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs font-bold uppercase tracking-wider">
+                                            {{ skill }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-col items-end gap-3">
+                                <span class="text-xs text-slate-400 whitespace-nowrap">{{ job.createdAt |
+                                    date:'dd/MM/yyyy' }}</span>
+                                <div class="flex items-center gap-2">
+                                    <button (click)="toggleSaveJob(job.jobId, $event)"
+                                        [class.text-primary]="(savedJobIds$ | async)?.has(job.jobId)"
+                                        [class.text-slate-400]="!(savedJobIds$ | async)?.has(job.jobId)"
+                                        class="p-2 hover:text-primary hover:bg-blue-50 rounded-lg transition-colors"
+                                        [title]="(savedJobIds$ | async)?.has(job.jobId) ? 'Bỏ lưu' : 'Lưu việc làm'">
+                                        <span class="material-symbols-outlined text-[22px]">
+                                            {{ (savedJobIds$ | async)?.has(job.jobId) ? 'bookmark' : 'bookmark_border'
+                                            }}
+                                        </span>
+                                    </button>
+                                    <button [routerLink]="['/candidate/job-detail', job.jobId]"
+                                        class="px-4 py-2 bg-slate-100 hover:bg-primary hover:text-white text-slate-700 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap">
+                                        Ứng tuyển
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pagination -->
+                <div *ngIf="!loading && totalPages > 1" class="flex justify-center mt-10">
+                    <nav class="flex items-center gap-2">
+                        <button (click)="changePage(currentPage - 1)" [disabled]="currentPage === 1"
+                            class="w-10 h-10 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                            <span class="material-symbols-outlined text-sm">chevron_left</span>
+                        </button>
+
+                        <ng-container *ngFor="let page of pages">
+                            <button *ngIf="page !== -1" (click)="changePage(page)"
+                                [class.bg-primary]="currentPage === page" [class.text-white]="currentPage === page"
+                                [class.border-primary]="currentPage === page" [class.bg-white]="currentPage !== page"
+                                [class.text-slate-600]="currentPage !== page"
+                                class="w-10 h-10 flex items-center justify-center rounded-lg border border-slate-200 font-medium hover:bg-slate-50 transition-all">
+                                {{ page }}
+                            </button>
+                            <span *ngIf="page === -1"
+                                class="w-10 h-10 flex items-center justify-center text-slate-400">...</span>
+                        </ng-container>
+
+                        <button (click)="changePage(currentPage + 1)" [disabled]="currentPage === totalPages"
+                            class="w-10 h-10 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                            <span class="material-symbols-outlined text-sm">chevron_right</span>
+                        </button>
+                    </nav>
+                </div>
+            </main>
+        </div>
+    </div>
+</div>
+
+<app-candidate-footer></app-candidate-footer>

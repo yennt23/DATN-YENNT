@@ -1,0 +1,157 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using DATN.Data;
+using DATN.Services.Implements;
+using DATN.Services.Interfaces;
+using DATN.Services.Background;
+var builder = WebApplication.CreateBuilder(args);
+
+var connectionString = builder.Configuration.GetConnectionString("DATNContext") 
+    ?? builder.Configuration.GetConnectionString("UTC_DATNContext");
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IMasterDataService, MasterDataService>();
+builder.Services.AddScoped<IJobService, JobService>();
+builder.Services.AddScoped<ICampaignQrService, CampaignQrService>();
+builder.Services.AddHttpClient("GoogleApis", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60);
+});
+builder.Services.AddScoped<IApplicationService, ApplicationService>();
+builder.Services.AddScoped<IApplicationWorkflowGuardService, ApplicationWorkflowGuardService>();
+builder.Services.AddScoped<ApplicationWorkflowGuardService>();
+builder.Services.AddScoped<IHrOperationsBusinessService, HrOperationsBusinessService>();
+builder.Services.AddScoped<IAiMatchingService, AiMatchingService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IInterviewService, InterviewService>();
+builder.Services.AddScoped<IEmployeeService, EmployeeService>();
+builder.Services.AddScoped<ICandidateProfileService, CandidateProfileService>();
+builder.Services.AddScoped<INotificationSettingsService, NotificationSettingsService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IRecommendationService, RecommendationService>();
+builder.Services.AddScoped<ISlaAlertService, SlaAlertService>();
+builder.Services.AddScoped<IAiCodeAssessmentService, AiCodeAssessmentService>();
+builder.Services.AddScoped<IAiScreeningService, AiScreeningService>();
+
+// Phase 1: Đăng ký Chatbot Infrastructure Services
+builder.Services.AddScoped<IntentClassifier>();
+builder.Services.AddScoped<EntityExtractor>();
+builder.Services.AddScoped<ChatAnalyticsService>();
+
+// Đăng ký GeminiApiKeyProvider (legacy - giữ tương thích)
+builder.Services.AddSingleton<IGeminiApiKeyProvider, GeminiApiKeyProvider>();
+
+// ── NÂNG CẤP: GeminiKeyPoolManager (Singleton, Thread-Safe, LRU + Cooldown)
+// Quản lý pool API key với thuật toán LRU, tự động Cooldown khi gặp 429/503
+builder.Services.AddSingleton<GeminiKeyPoolManager>();
+
+// ── GeminiCvScreeningService (Scoped): Batch CV Screening 5 CV / 1 API call
+builder.Services.AddScoped<GeminiCvScreeningService>();
+
+// Configure OpenAI Client
+builder.Services.AddHttpClient();
+builder.Services.AddHostedService<JobExpirationService>();
+builder.Services.AddHostedService<SlaAlertBackgroundService>();
+
+// Đăng ký HttpClientFactory cho các service cần gọi external API
+builder.Services.AddHttpClient<IAiMatchingService, AiMatchingService>();
+builder.Services.AddHttpClient(); // Cho MasterDataService
+
+// KẾ HOẠCH TỐI ƯU TỐC ĐỘ: Cấu hình HttpClient riêng cho Gemini
+// Timeout 90s để đủ thời gian xử lý Batch 5 CV / 1 request
+builder.Services.AddHttpClient("GeminiClient", client => {
+    var timeoutSeconds = builder.Configuration.GetValue<int>("GeminiAI:HttpTimeoutSeconds", 90);
+    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+    // Tắt Header Expect: 100-continue để tối ưu hóa việc đẩy Stream cho Google
+    client.DefaultRequestHeaders.ExpectContinue = false;
+});
+
+// Đăng ký Memory Cache cho caching
+builder.Services.AddMemoryCache();
+
+// Phase 2: Background queue for non-blocking persistence and analytics
+builder.Services.AddSingleton<DATN.Services.Background.IBackgroundTaskQueue, DATN.Services.Background.BackgroundTaskQueue>();
+builder.Services.AddHostedService<DATN.Services.Background.BackgroundProcessingService>();
+
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]!);
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.RequireHttpsMetadata = false;
+    options.SaveToken = true;
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(key),
+        ValidateIssuer = true,
+        ValidIssuer = jwtSettings["Issuer"],
+        ValidateAudience = true,
+        ValidAudience = jwtSettings["Audience"],
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    };
+});
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAngular",
+        policy =>
+        {
+            policy.WithOrigins("http://localhost:4200", "https://localhost:4200") 
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials(); 
+        });
+});
+
+builder.Services.AddDbContext<DATNContext>(options =>
+    options.UseSqlServer(connectionString));
+// Add services to the container.
+
+builder.Services.AddControllers();
+
+// Cấu hình file upload size limit
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 10485760; // 10MB
+});
+
+builder.Services.AddOpenApi();
+
+var app = builder.Build();
+
+// Seed initial data (Roles và Admin User)
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<DATNContext>();
+    await DbInitializer.InitializeAsync(context);
+}
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
+{
+
+    app.MapOpenApi();
+}
+
+app.UseCors("AllowAngular");
+
+// Serve static files từ wwwroot (cho file uploads)
+app.UseStaticFiles();
+
+app.UseAuthentication(); 
+app.UseAuthorization();
+
+// app.UseHttpsRedirection(); // Tắt trong development, chỉ dùng HTTP
+
+
+
+app.MapControllers();
+
+app.Run();

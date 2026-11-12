@@ -1,0 +1,219 @@
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { RouterModule, Router } from '@angular/router';
+import { AuthService } from '../../../services/auth.service';
+import { NotificationService, NotificationDto } from '../../../services/notification.service';
+import { CandidateService } from '../../../services/candidate.service';
+
+@Component({
+    selector: 'app-candidate-header',
+    standalone: true,
+    imports: [CommonModule, RouterModule],
+    templateUrl: './candidate-header.html',
+    styleUrl: './candidate-header.scss',
+})
+export class CandidateHeaderComponent implements OnInit, OnDestroy {
+    isLoggedIn = false;
+    userFullName = 'Người dùng';
+    userRole = 'CANDIDATE';
+    userEmail = '';
+    avatarUrl = '';
+
+    unreadCount = 0;
+    notifications: NotificationDto[] = [];
+    isNotificationDropdownOpen = false;
+
+    // Admin Preview Mode
+    isAdminPreview = false;
+
+    constructor(
+        private authService: AuthService,
+        private notificationService: NotificationService,
+        private candidateService: CandidateService,
+        private router: Router
+    ) { }
+
+    private pollingInterval: any;
+
+    ngOnInit(): void {
+        if (typeof window !== 'undefined' && window.localStorage) {
+            // Check Admin Preview Mode
+            this.isAdminPreview = localStorage.getItem('isAdminPreview') === 'true';
+
+            // Check xem có token không - sử dụng key 'authToken' đúng với hệ thống
+            const token = localStorage.getItem('authToken');
+            this.isLoggedIn = !!token;
+
+            if (this.isLoggedIn && token) {
+                try {
+                    // Parse JWT token để lấy thông tin user
+                    const payload = JSON.parse(atob(token.split('.')[1]));
+
+                    // Lấy thông tin từ JWT claims (hỗ trợ cả short name và full claim name)
+                    this.userRole = (payload.role ||
+                        payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ||
+                        'CANDIDATE').toString().toUpperCase();
+
+                    this.userFullName = payload.name ||
+                        payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ||
+                        'Người dùng';
+
+                    this.userEmail = payload.email ||
+                        payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ||
+                        '';
+
+                    console.log('Header loaded user:', this.userFullName, 'Role:', this.userRole);
+
+                    this.loadAccountInfo();
+
+                    // Load notifications if candidate
+                    if (this.userRole === 'CANDIDATE') {
+                        this.loadNotifications();
+
+                        // Setup polling every 30 seconds
+                        this.pollingInterval = setInterval(() => {
+                            this.loadNotifications();
+                        }, 30000);
+                    }
+                } catch (e) {
+                    console.error('Error parsing token in header:', e);
+                    this.userFullName = 'Người dùng';
+                    this.userRole = 'CANDIDATE';
+                }
+            } else {
+                console.log('No token found in header component');
+            }
+        }
+    }
+
+    private loadAccountInfo(): void {
+        this.candidateService.getProfile().subscribe({
+            next: (profile) => {
+                if (profile.fullName?.trim()) {
+                    this.userFullName = profile.fullName.trim();
+                }
+                if (profile.email?.trim()) {
+                    this.userEmail = profile.email.trim();
+                }
+                if (profile.avatar?.trim()) {
+                    this.avatarUrl = this.toAbsoluteAvatarUrl(profile.avatar.trim());
+                }
+            },
+            error: (err) => {
+                console.warn('Cannot load candidate profile for header, using token fallback.', err);
+            }
+        });
+    }
+
+    private toAbsoluteAvatarUrl(url: string): string {
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+            return url;
+        }
+        const clean = url.startsWith('/') ? url.slice(1) : url;
+        return `/${clean}`;
+    }
+
+    get roleLabel(): string {
+        const roleMap: Record<string, string> = {
+            CANDIDATE: 'Ứng viên',
+            HR: 'Nhân sự',
+            ADMIN: 'Quản trị viên',
+            INTERVIEWER: 'Phỏng vấn viên'
+        };
+        return roleMap[this.userRole] || this.userRole;
+    }
+
+    get avatarFallbackUrl(): string {
+        return `https://ui-avatars.com/api/?name=${encodeURIComponent(this.userFullName)}&background=3B82F6&color=fff&bold=true`;
+    }
+
+    ngOnDestroy(): void {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+        }
+    }
+
+    logout(): void {
+        this.authService.logout();
+    }
+
+    loadNotifications(): void {
+        this.notificationService.getUnreadCount().subscribe({
+            next: (count) => this.unreadCount = count,
+            error: (err) => console.error('Error fetching unread count:', err)
+        });
+
+        this.notificationService.getNotifications().subscribe({
+            next: (data) => this.notifications = data,
+            error: (err) => console.error('Error fetching notifications:', err)
+        });
+    }
+
+    toggleNotificationDropdown(): void {
+        this.isNotificationDropdownOpen = !this.isNotificationDropdownOpen;
+        if (this.isNotificationDropdownOpen && this.unreadCount > 0) {
+            // Optional: Auto mark as read when opening? 
+            // Better to do it manually or on specific click
+        }
+    }
+
+    markAsRead(n: NotificationDto): void {
+        if (!n.isRead) {
+            this.notificationService.markAsRead(n.id).subscribe({
+                next: () => {
+                    n.isRead = true;
+                    this.unreadCount = Math.max(0, this.unreadCount - 1);
+                }
+            });
+        }
+    }
+
+    markAllAsRead(): void {
+        this.notificationService.markAllAsRead().subscribe({
+            next: () => {
+                this.notifications.forEach(n => n.isRead = true);
+                this.unreadCount = 0;
+            }
+        });
+    }
+
+    formatDate(dateStr: string): string {
+        const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(dateStr);
+        const normalizedDateStr = hasTimezone ? dateStr : `${dateStr}Z`;
+        const date = new Date(normalizedDateStr);
+
+        if (Number.isNaN(date.getTime())) {
+            return dateStr;
+        }
+
+        return date.toLocaleDateString('vi-VN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            day: '2-digit',
+            month: '2-digit'
+        });
+    }
+
+    getTypeLabel(type: string): string {
+        const labels: { [key: string]: string } = {
+            'JOB_OPPORTUNITY': '💼 Cơ hội việc làm',
+            'APPLICATION_UPDATE': '📋 Cập nhật đơn ứng tuyển',
+            'SECURITY': '🔒 Bảo mật tài khoản',
+            'INTERVIEW': '📞 Cuộc phỏng vấn',
+            'MESSAGE': '💬 Tin nhắn mới'
+        };
+        return labels[type] || 'Thông báo';
+    }
+
+    backToAdmin(): void {
+        // Remove preview flag
+        localStorage.removeItem('isAdminPreview');
+        // Navigate back to admin dashboard
+        this.router.navigate(['/hr/dashboard']);
+    }
+
+    toggleUserMenu(): void {
+        // Close user menu after navigation click
+        // (menu auto-closes on route change, this handles edge cases)
+    }
+}

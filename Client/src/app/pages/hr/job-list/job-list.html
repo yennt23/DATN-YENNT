@@ -1,0 +1,255 @@
+<div class="animate-fade-in-up">
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div>
+            <h1 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Quản Lý Việc Làm</h1>
+            <p class="text-slate-500 dark:text-slate-400 mt-1">Danh sách tất cả các tin tuyển dụng đã đăng</p>
+        </div>
+        <button routerLink="/hr/post-job"
+            class="flex items-center gap-2 px-5 py-2.5 bg-primary hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-500/30">
+            <span class="material-symbols-outlined">add</span>
+            <span>Đăng Tin Mới</span>
+        </button>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="bg-white dark:bg-slate-950 p-6 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm">
+            <div class="flex items-center gap-4">
+                <div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-primary">
+                    <span class="material-symbols-outlined">work</span>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Tổng Việc Làm</p>
+                    <h3 class="text-2xl font-bold text-slate-900 dark:text-white">{{ jobs().length }}</h3>
+                </div>
+            </div>
+        </div>
+        <!-- Add more stats if needed -->
+    </div>
+
+    <!-- Filters & Search -->
+    <div class="bg-white dark:bg-slate-950 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm mb-6 p-4">
+        <div class="flex flex-col md:flex-row gap-4">
+            <div class="flex-1 relative">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                    <span class="material-symbols-outlined">search</span>
+                </span>
+                <input type="text" [(ngModel)]="searchTerm" (ngModelChange)="filterJobs()"
+                    class="block w-full rounded-lg border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 py-2.5 pl-10 pr-4 text-sm focus:border-primary focus:ring-primary dark:text-white"
+                    placeholder="Tìm kiếm theo tiêu đề, địa điểm...">
+            </div>
+            <div class="flex gap-2">
+                <select [(ngModel)]="statusFilter" (ngModelChange)="filterJobs()"
+                    class="rounded-lg border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 py-2.5 pl-3 pr-10 text-sm focus:border-primary focus:ring-primary dark:text-white">
+                    <option value="">Tất cả trạng thái</option>
+                    <option value="Only">Đang tuyển</option>
+                    <option value="Closed">Đã đóng</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Job List Table -->
+    <div
+        class="bg-white dark:bg-slate-950 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left">
+                <thead class="text-xs text-gray-500 uppercase bg-gray-50 dark:bg-slate-900 dark:text-slate-400">
+                    <tr>
+                        <th class="px-6 py-4 font-bold">Tiêu Đề</th>
+                        <th class="px-6 py-4 font-bold">Phân Xưởng</th>
+                        <th class="px-6 py-4 font-bold">Địa Điểm</th>
+                        <th class="px-6 py-4 font-bold">Hồ Sơ Tuyển</th>
+                        <th class="px-6 py-4 font-bold">Mức Lương</th>
+                        <th class="px-6 py-4 font-bold text-center">Tiến Độ</th>
+                        <th class="px-6 py-4 font-bold">Ngày Đăng</th>
+                        <th class="px-6 py-4 font-bold">Hạn Nộp</th>
+                        <th class="px-6 py-4 font-bold text-center">Người Tạo</th>
+                        <th class="px-6 py-4 font-bold">Đóng Bởi</th>
+                        <th class="px-6 py-4 font-bold text-right">Thao Tác</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-slate-800">
+                    <tr *ngIf="isLoading()">
+                        <td colspan="11" class="px-6 py-12">
+                            <div class="flex flex-col items-center justify-center gap-4">
+                                <div
+                                    class="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin">
+                                </div>
+                                <p class="text-gray-500 font-medium">Đang tải danh sách việc làm...</p>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <tr *ngFor="let job of paginatedJobs()"
+                        class="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors group">
+                        <td class="px-6 py-4">
+                            <div class="font-bold text-slate-900 dark:text-white text-base flex flex-wrap items-center gap-1.5">
+                                <span>{{ job.title }}</span>
+                                <span *ngIf="job.status === 'CLOSED'"
+                                    class="px-2 py-0.5 text-xs rounded bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-gray-300">Đã đóng</span>
+                                <span *ngIf="job.requisitionStatus === 'Pending_Approval'"
+                                    class="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-800 font-bold border border-amber-300">
+                                    ⏳ Chờ duyệt định biên
+                                </span>
+                                <span *ngIf="job.requisitionStatus === 'Approved'"
+                                    class="px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                                    ✅ Đã duyệt định biên
+                                </span>
+                                <span *ngIf="job.requireNightShift"
+                                    class="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-800 font-bold border border-purple-200"
+                                    title="Công việc bắt buộc làm ca đêm (22h-06h), chặn ứng viên dưới 18 tuổi">
+                                    🌙 Ca đêm
+                                </span>
+                            </div>
+                            <div class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{{ job.employmentType || 'Toàn thời gian' }}</div>
+                        </td>
+                        <td class="px-6 py-4 text-slate-700 dark:text-slate-300">
+                            <span class="inline-flex items-center rounded-full bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 px-3 py-1 text-xs font-semibold">
+                                {{ job.departmentName || 'Chưa gán phân xưởng' }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-slate-600 dark:text-slate-300">
+                            <div class="flex items-center gap-1">
+                                <span class="material-symbols-outlined text-[16px] text-gray-400">location_on</span>
+                                {{ job.location || 'Remote' }}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 text-xs text-slate-600 dark:text-slate-300">
+                            <div class="font-semibold text-slate-700 dark:text-slate-200">{{ job.seniorityLevel || 'Chưa chọn ca' }}</div>
+                            <div class="mt-0.5">{{ job.experienceLevel || 'Kinh nghiệm linh hoạt' }}</div>
+                        </td>
+                        <td class="px-6 py-4 font-medium text-slate-900 dark:text-white">
+                            {{ formatSalary(job.salaryMin, job.salaryMax) }}
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <div class="inline-flex items-center justify-center px-2.5 py-1 rounded-full text-xs font-medium"
+                                [ngClass]="{
+                                    'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400': job.numberOfPositions && (job.totalHired || 0) >= job.numberOfPositions,
+                                    'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400': !job.numberOfPositions || (job.totalHired || 0) < job.numberOfPositions
+                                }">
+                                <span class="material-symbols-outlined text-[14px] mr-1">group</span>
+                                {{ job.totalHired || 0 }} / {{ job.numberOfPositions || '∞' }}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 text-slate-500 dark:text-slate-400">
+                            {{ formatDate(job.createdDate) }}
+                        </td>
+                        <td class="px-6 py-4 text-slate-500 dark:text-slate-400">
+                            {{ formatDate(job.deadline || '') }}
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <div class="flex flex-col items-center justify-center">
+                                <span class="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                    {{ job.createdByName || 'Hệ thống' }}
+                                </span>
+                                <span
+                                    class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800">
+                                    {{ job.createdByRole || 'Admin' }}
+                                </span>
+                            </div>
+                        </td>
+                        <!-- Audit Trail: Đóng bởi -->
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div *ngIf="job.status === 'CLOSED' && job.closedByName" class="text-xs">
+                                <div class="font-medium text-red-600 dark:text-red-400 flex items-center gap-1">
+                                    <span class="material-symbols-outlined text-sm">lock</span>
+                                    {{ job.closedByName }}
+                                </div>
+                                <div class="text-gray-400 dark:text-slate-500 mt-0.5">
+                                    {{ job.closedAt ? formatDate(job.closedAt) : '' }}
+                                </div>
+                            </div>
+                            <span *ngIf="job.status !== 'CLOSED' || !job.closedByName"
+                                class="text-gray-300 dark:text-slate-600 text-xs">—</span>
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <div
+                                class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button *ngIf="job.requisitionStatus === 'Pending_Approval'"
+                                    type="button"
+                                    (click)="onApproveRequisition(job.jobId)"
+                                    class="px-2 py-1 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-sm transition"
+                                    title="Phê duyệt định biên ngân sách cho chiến dịch này">
+                                    <span class="material-symbols-outlined text-[16px]">verified</span>
+                                    Duyệt
+                                </button>
+                                <button type="button" (click)="openCampaignQr(job)"
+                                    class="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg"
+                                    title="Google Form + QR">
+                                    <span class="material-symbols-outlined text-[20px]">qr_code_2</span>
+                                </button>
+                                <a [routerLink]="['/hr/manage-applications', job.jobId]"
+                                    class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg tooltip-trigger"
+                                    title="Xem ứng viên">
+                                    <span class="material-symbols-outlined text-[20px]">group</span>
+                                </a>
+
+                                <!-- Button Close: Only for OPEN jobs -->
+                                <button *ngIf="job.status !== 'CLOSED'" (click)="onClose(job.jobId)"
+                                    class="p-2 text-orange-500 hover:bg-orange-50 rounded-lg tooltip-trigger"
+                                    title="Ngừng đăng (Ẩn tin)">
+                                    <span class="material-symbols-outlined text-[20px]">visibility_off</span>
+                                </button>
+
+                                <!-- Button Open: Only for CLOSED jobs -->
+                                <button *ngIf="job.status === 'CLOSED'" (click)="onOpen(job.jobId)"
+                                    class="p-2 text-green-500 hover:bg-green-50 rounded-lg tooltip-trigger"
+                                    title="Đăng lại (Mở tin)">
+                                    <span class="material-symbols-outlined text-[20px]">play_circle</span>
+                                </button>
+
+                                <a [routerLink]="['/hr/post-job', job.jobId]"
+                                    class="p-2 text-gray-500 hover:bg-gray-100 rounded-lg tooltip-trigger"
+                                    title="Chỉnh sửa">
+                                    <span class="material-symbols-outlined text-[20px]">edit</span>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <tr *ngIf="!isLoading && filteredJobs.length === 0">
+                        <td colspan="11" class="px-6 py-12 text-center text-gray-500">
+                            <div class="flex flex-col items-center gap-3">
+                                <div
+                                    class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-gray-400">
+                                    <span class="material-symbols-outlined text-[24px]">search_off</span>
+                                </div>
+                                <p>Không tìm thấy tin tuyển dụng nào</p>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <div *ngIf="filteredJobs().length > 0"
+            class="px-6 py-4 bg-gray-50 dark:bg-slate-900/50 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between">
+            <p class="text-xs text-gray-500 dark:text-slate-400 font-medium">
+                Hiển thị {{ (currentPage() - 1) * itemsPerPage + 1 }} - {{ Math.min(currentPage() * itemsPerPage,
+                filteredJobs().length) }} trên tổng số {{ filteredJobs().length }} tin tuyển dụng
+            </p>
+            <div class="flex gap-1" *ngIf="totalPages() > 1">
+                <button [disabled]="currentPage() === 1" (click)="changePage(currentPage() - 1)"
+                    class="p-1 px-3 border border-gray-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 dark:text-white disabled:opacity-50 text-sm font-medium transition-colors hover:bg-gray-50">
+                    Trước
+                </button>
+                <div class="flex items-center px-4 font-bold text-sm text-slate-900 dark:text-white">
+                    {{ currentPage() }} / {{ totalPages() }}
+                </div>
+                <button [disabled]="currentPage() === totalPages()" (click)="changePage(currentPage() + 1)"
+                    class="p-1 px-3 border border-gray-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 dark:text-white disabled:opacity-50 text-sm font-medium transition-colors hover:bg-gray-50">
+                    Sau
+                </button>
+            </div>
+        </div>
+    </div>
+    <app-campaign-qr-modal
+        [campaign]="campaignQr"
+        [regenerating]="regeneratingQr"
+        (closed)="closeCampaignQr()"
+        (regenerate)="regenerateCampaignQr()">
+    </app-campaign-qr-modal>
+</div>

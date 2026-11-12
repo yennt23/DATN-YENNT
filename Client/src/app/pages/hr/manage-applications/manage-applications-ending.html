@@ -1,0 +1,11 @@
+<span *ngIf="isSendingRejectEmail" class="animate-spin">⏳</span>
+{{ isSendingRejectEmail ? 'Đang gửi...' : 'Gửi Email Từ Chối' }}
+</button>
+</div>
+</div>
+</div>
+</div>
+
+<app-offer-modal [isOpen]="isOfferModalOpen" [candidate]="selectedCandidateForOffer" (close)="isOfferModalOpen = false"
+    (offerSent)="handleOfferSent($event)">
+</app-offer-modal>
