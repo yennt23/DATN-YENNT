@@ -249,7 +249,10 @@ public class ApplicationService : IApplicationService
 
             // Tạo tên file mới
             var newFileName = $"{Guid.NewGuid()}_{DateTime.UtcNow:yyyyMMddHHmmss}{fileExtension}";
-            var uploadsFolderPath = Path.Combine(_environment.WebRootPath ?? "/app/wwwroot", "uploads", "cvs");
+            var webRoot = !string.IsNullOrWhiteSpace(_environment.WebRootPath)
+                ? _environment.WebRootPath
+                : Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+            var uploadsFolderPath = Path.Combine(webRoot, "uploads", "cvs");
             Directory.CreateDirectory(uploadsFolderPath);
             savedFilePath = Path.Combine(uploadsFolderPath, newFileName);
 

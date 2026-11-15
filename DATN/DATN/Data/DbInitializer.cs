@@ -359,7 +359,20 @@ END;
 IF OBJECT_ID('dbo.InterviewBatches', 'U') IS NOT NULL
 BEGIN
     IF COL_LENGTH('dbo.InterviewBatches', 'JobId') IS NULL ALTER TABLE dbo.InterviewBatches ADD JobId UNIQUEIDENTIFIER NULL;
-    IF COL_LENGTH('dbo.InterviewBatches', 'InterviewerUserId') IS NULL ALTER TABLE dbo.InterviewBatches ADD InterviewerUserId UNIQUEIDENTIFIER NULL;
+    IF COL_LENGTH('dbo.InterviewBatches', 'InterviewerUserId') IS NULL 
+    BEGIN
+        ALTER TABLE dbo.InterviewBatches ADD InterviewerUserId UNIQUEIDENTIFIER NULL;
+        IF COL_LENGTH('dbo.InterviewBatches', 'InterviewerId') IS NOT NULL
+            EXEC('UPDATE dbo.InterviewBatches SET InterviewerUserId = InterviewerId WHERE InterviewerUserId IS NULL');
+    END;
+    IF COL_LENGTH('dbo.InterviewBatches', 'MaxCapacity') IS NULL 
+        ALTER TABLE dbo.InterviewBatches ADD MaxCapacity INT NOT NULL CONSTRAINT DF_InterviewBatches_MaxCapacity DEFAULT (50);
+    IF COL_LENGTH('dbo.InterviewBatches', 'CurrentCount') IS NULL 
+    BEGIN
+        ALTER TABLE dbo.InterviewBatches ADD CurrentCount INT NOT NULL CONSTRAINT DF_InterviewBatches_CurrentCount DEFAULT (0);
+        IF COL_LENGTH('dbo.InterviewBatches', 'CurrentEnrolled') IS NOT NULL
+            EXEC('UPDATE dbo.InterviewBatches SET CurrentCount = CurrentEnrolled WHERE CurrentCount = 0');
+    END;
     IF COL_LENGTH('dbo.InterviewBatches', 'LocationRoom') IS NULL 
         ALTER TABLE dbo.InterviewBatches ADD LocationRoom NVARCHAR(200) NULL CONSTRAINT DF_InterviewBatches_LocationRoom DEFAULT (N'Hội trường tuyển dụng A');
     ELSE

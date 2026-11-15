@@ -139,7 +139,8 @@ public class ApplicationController : ControllerBase
             return StatusCode(500, new
             {
                 success = false,
-                message = "Có lỗi hệ thống xảy ra. Vui lòng thử lại sau."
+                message = "Có lỗi hệ thống xảy ra: " + (ex.InnerException?.Message ?? ex.Message),
+                detail = ex.ToString()
             });
         }
     }
