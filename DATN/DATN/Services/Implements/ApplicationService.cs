@@ -1,16 +1,16 @@
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
-using UTC_DATN.Data;
-using UTC_DATN.DTOs.Application;
-using UTC_DATN.Entities;
-using UTC_DATN.Services.Interfaces;
+using DATN.Data;
+using DATN.DTOs.Application;
+using DATN.Entities;
+using DATN.Services.Interfaces;
 
-namespace UTC_DATN.Services.Implements;
+namespace DATN.Services.Implements;
 
 public class ApplicationService : IApplicationService
 {
-    private readonly UTC_DATNContext _context;
+    private readonly DATNContext _context;
     private readonly IWebHostEnvironment _environment;
     private readonly ILogger<ApplicationService> _logger;
     private readonly IAiMatchingService _aiMatchingService;
@@ -196,7 +196,7 @@ public class ApplicationService : IApplicationService
     }
 
     public ApplicationService(
-        UTC_DATNContext context,
+        DATNContext context,
         IWebHostEnvironment environment,
         ILogger<ApplicationService> logger,
         IAiMatchingService aiMatchingService,
@@ -600,7 +600,7 @@ public class ApplicationService : IApplicationService
         _logger.LogInformation("🔄 [BACKGROUND] Bắt đầu chấm điểm CV bằng AI cho ApplicationId: {Id}", applicationId);
 
         using var scope = _serviceProvider.CreateScope();
-        var scopedDbContext = scope.ServiceProvider.GetRequiredService<UTC_DATNContext>();
+        var scopedDbContext = scope.ServiceProvider.GetRequiredService<DATNContext>();
         var scopedLogger    = scope.ServiceProvider.GetRequiredService<ILogger<ApplicationService>>();
         var scopedAiService = scope.ServiceProvider.GetRequiredService<IAiMatchingService>();
         var scopedEmailService = scope.ServiceProvider.GetRequiredService<IEmailService>();

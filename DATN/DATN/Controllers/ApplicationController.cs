@@ -2,14 +2,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
-using UTC_DATN.Data;
-using UTC_DATN.Entities;
-using UTC_DATN.DTOs.Application;
-using UTC_DATN.DTOs.Interview;
-using UTC_DATN.Services.Implements;
-using UTC_DATN.Services.Interfaces;
+using DATN.Data;
+using DATN.Entities;
+using DATN.DTOs.Application;
+using DATN.DTOs.Interview;
+using DATN.Services.Implements;
+using DATN.Services.Interfaces;
 
-namespace UTC_DATN.Controllers;
+namespace DATN.Controllers;
 
 [ApiController]
 [Route("api/applications")]
@@ -18,7 +18,7 @@ public class ApplicationController : ControllerBase
     private readonly IApplicationService _applicationService;
     private readonly IInterviewService _interviewService;
     private readonly ILogger<ApplicationController> _logger;
-    private readonly UTC_DATNContext _context;
+    private readonly DATNContext _context;
     private readonly IConfiguration _configuration;
     private readonly ICampaignQrService _campaignQrService;
     private readonly IApplicationWorkflowGuardService _workflowGuard;
@@ -29,7 +29,7 @@ public class ApplicationController : ControllerBase
         IApplicationService applicationService,
         IInterviewService interviewService,
         ILogger<ApplicationController> logger,
-        UTC_DATNContext context,
+        DATNContext context,
         IConfiguration configuration,
         ICampaignQrService campaignQrService,
         IApplicationWorkflowGuardService workflowGuard,

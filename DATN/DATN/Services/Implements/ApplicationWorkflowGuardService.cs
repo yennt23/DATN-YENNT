@@ -8,10 +8,10 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using UglyToad.PdfPig;
-using UTC_DATN.Data;
-using UTC_DATN.Entities;
+using DATN.Data;
+using DATN.Entities;
 
-namespace UTC_DATN.Services.Implements;
+namespace DATN.Services.Implements;
 
 #region DTOs cho 7 Logic Nghiệp Vụ Kiểm Soát & Onboarding
 
@@ -140,11 +140,11 @@ public interface IApplicationWorkflowGuardService
 /// </summary>
 public class ApplicationWorkflowGuardService : IApplicationWorkflowGuardService
 {
-    private readonly UTC_DATNContext _context;
+    private readonly DATNContext _context;
     private readonly ILogger<ApplicationWorkflowGuardService> _logger;
 
     public ApplicationWorkflowGuardService(
-        UTC_DATNContext context,
+        DATNContext context,
         ILogger<ApplicationWorkflowGuardService> logger)
     {
         _context = context;
