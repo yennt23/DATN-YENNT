@@ -1,16 +1,16 @@
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
-using DATN.Data;
-using DATN.DTOs.Application;
-using DATN.Entities;
-using DATN.Services.Interfaces;
+using UTC_DATN.Data;
+using UTC_DATN.DTOs.Application;
+using UTC_DATN.Entities;
+using UTC_DATN.Services.Interfaces;
 
-namespace DATN.Services.Implements;
+namespace UTC_DATN.Services.Implements;
 
 public class ApplicationService : IApplicationService
 {
-    private readonly DATNContext _context;
+    private readonly UTC_DATNContext _context;
     private readonly IWebHostEnvironment _environment;
     private readonly ILogger<ApplicationService> _logger;
     private readonly IAiMatchingService _aiMatchingService;
@@ -196,7 +196,7 @@ public class ApplicationService : IApplicationService
     }
 
     public ApplicationService(
-        DATNContext context,
+        UTC_DATNContext context,
         IWebHostEnvironment environment,
         ILogger<ApplicationService> logger,
         IAiMatchingService aiMatchingService,
@@ -600,7 +600,7 @@ public class ApplicationService : IApplicationService
         _logger.LogInformation("🔄 [BACKGROUND] Bắt đầu chấm điểm CV bằng AI cho ApplicationId: {Id}", applicationId);
 
         using var scope = _serviceProvider.CreateScope();
-        var scopedDbContext = scope.ServiceProvider.GetRequiredService<DATNContext>();
+        var scopedDbContext = scope.ServiceProvider.GetRequiredService<UTC_DATNContext>();
         var scopedLogger    = scope.ServiceProvider.GetRequiredService<ILogger<ApplicationService>>();
         var scopedAiService = scope.ServiceProvider.GetRequiredService<IAiMatchingService>();
         var scopedEmailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
@@ -676,7 +676,7 @@ public class ApplicationService : IApplicationService
                     explanation = aiResult.Explanation
                 }),
                 BreakdownJson  = breakdownJson,
-                Model          = "gemini-1.5-flash",
+                Model          = "gemini-2.5-flash",
                 CreatedAt      = DateTime.UtcNow
             };
 
@@ -778,32 +778,8 @@ public class ApplicationService : IApplicationService
         if (!stateCheck.IsValid)
             throw new InvalidOperationException(stateCheck.ErrorMessage);
 
-        var normalizedStatus = newStatus.Trim() switch
-        {
-            "SentToManager" => "SCREENING",
-            "ScheduledInterview" => "INTERVIEW",
-            "InterviewPassed" => "PASSED",
-            "Rejected" => "REJECTED",
-            _ => newStatus.Trim()
-        };
-
-        application.Status = normalizedStatus;
+        application.Status = newStatus;
         application.LastStageChangedAt = DateTime.UtcNow;
-
-        var targetStage = await _context.PipelineStages
-            .OrderBy(s => s.SortOrder)
-            .FirstOrDefaultAsync(s => s.Code == normalizedStatus.ToUpperInvariant() || s.Name.Contains(newStatus));
-        if (targetStage != null)
-        {
-            application.CurrentStageId = targetStage.StageId;
-        }
-
-        if (string.Equals(normalizedStatus, "PASSED", StringComparison.OrdinalIgnoreCase)
-            && application.ApplicationSource == "PDF_UPLOAD"
-            && (string.IsNullOrEmpty(application.OfferStatus) || application.OfferStatus == "Not_Required"))
-        {
-            application.OfferStatus = "Offer_Pending";
-        }
 
         // Xóa (đánh dấu đã đọc) các thông báo SLA cũ của hồ sơ này
         var slaNotifications = await _context.Notifications
@@ -1080,20 +1056,28 @@ public class ApplicationService : IApplicationService
             return result;
         }
 
-        // 3. Lấy danh sách số điện thoại đã nộp hồ sơ cho Job này để chống lưu trùng
-        var existingPhonesInJob = await _context.Applications
+        // 3. Lấy danh sách số điện thoại và CandidateId đã nộp hồ sơ cho Job này để chống lưu trùng
+        var existingApplicationsInJob = await _context.Applications
             .Where(a => a.JobId == request.JobId)
-            .Select(a => !string.IsNullOrEmpty(a.ContactPhone) ? a.ContactPhone : a.Candidate.Phone)
-            .Where(p => !string.IsNullOrEmpty(p))
+            .Select(a => new { Phone = !string.IsNullOrEmpty(a.ContactPhone) ? a.ContactPhone : a.Candidate.Phone, a.CandidateId })
             .ToListAsync();
 
         var existingPhoneSet = new HashSet<string>(
-            existingPhonesInJob.Select(NormalizePhoneNumber).Where(p => !string.IsNullOrEmpty(p)),
+            existingApplicationsInJob.Select(a => NormalizePhoneNumber(a.Phone)).Where(p => !string.IsNullOrEmpty(p)),
             StringComparer.OrdinalIgnoreCase
+        );
+
+        var existingCandidateIdsInJob = new HashSet<Guid>(
+            existingApplicationsInJob.Select(a => a.CandidateId)
         );
 
         // Track số điện thoại trong chính batch hiện tại
         var batchPhoneSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var pendingNotes = new List<Entities.ApplicationNote>();
+
+        var defaultAdminUserId = job.CreatedBy 
+            ?? await _context.Users.Select(u => (Guid?)u.UserId).FirstOrDefaultAsync() 
+            ?? Guid.Parse("30000000-0000-0000-0000-000000000001");
 
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
@@ -1126,6 +1110,16 @@ public class ApplicationService : IApplicationService
                     continue;
                 }
 
+                // Cắt ngắn an toàn cho các trường độ dài hạn chế
+                var safeFullName = item.FullName.Trim();
+                if (safeFullName.Length > 200) safeFullName = safeFullName[..200];
+
+                var safePhone = cleanPhone;
+                if (safePhone.Length > 50) safePhone = safePhone[..50];
+
+                var safeLocation = item.Hometown?.Trim() ?? string.Empty;
+                if (safeLocation.Length > 200) safeLocation = safeLocation[..200];
+
                 // Kiểm tra trùng lặp trong chiến dịch hoặc trùng lặp trong batch
                 if (existingPhoneSet.Contains(cleanPhone) || batchPhoneSet.Contains(cleanPhone))
                 {
@@ -1134,11 +1128,19 @@ public class ApplicationService : IApplicationService
                     continue;
                 }
 
-                batchPhoneSet.Add(cleanPhone);
-
                 // 4. Tìm Candidate trong hệ thống theo Phone (hoặc Email nếu có)
                 var candidate = await _context.Candidates
                     .FirstOrDefaultAsync(c => c.Phone == cleanPhone);
+
+                // Kiểm tra xem ứng viên này đã có hồ sơ trong Job này chưa (ngăn ngừa vi phạm UQ_Applications_Job_Candidate)
+                if (candidate != null && existingCandidateIdsInJob.Contains(candidate.CandidateId))
+                {
+                    result.DuplicateCount++;
+                    result.DuplicatePhones.Add(cleanPhone);
+                    continue;
+                }
+
+                batchPhoneSet.Add(cleanPhone);
 
                 var shiftDesc = item.IsShiftReady ? "Sẵn sàng làm 3 ca / xoay ca" : "Không làm xoay ca";
                 var summaryParts = new List<string>();
@@ -1150,17 +1152,18 @@ public class ApplicationService : IApplicationService
                 var candidateEmail = !string.IsNullOrWhiteSpace(item.Email)
                     ? item.Email.Trim()
                     : $"{cleanPhone}@mass-recruit.local";
+                if (candidateEmail.Length > 256) candidateEmail = candidateEmail[..256];
 
                 if (candidate == null)
                 {
                     candidate = new Entities.Candidate
                     {
                         CandidateId = Guid.NewGuid(),
-                        FullName = item.FullName.Trim(),
-                        Phone = cleanPhone,
+                        FullName = safeFullName,
+                        Phone = safePhone,
                         Email = candidateEmail,
-                        Location = item.Hometown?.Trim() ?? string.Empty,
-                        Headline = $"Công nhân ứng tuyển - {item.FullName.Trim()}",
+                        Location = safeLocation,
+                        Headline = $"Công nhân ứng tuyển - {safeFullName}",
                         Summary = string.Join(" | ", summaryParts),
                         Source = "GOOGLE_SHEETS",
                         CreatedAt = DateTime.UtcNow
@@ -1172,7 +1175,7 @@ public class ApplicationService : IApplicationService
                     // Cập nhật thông tin phụ nếu candidate cũ chưa có
                     if (string.IsNullOrEmpty(candidate.Location) && !string.IsNullOrWhiteSpace(item.Hometown))
                     {
-                        candidate.Location = item.Hometown.Trim();
+                        candidate.Location = safeLocation;
                     }
                     if (!string.IsNullOrWhiteSpace(item.ExperienceNotes))
                     {
@@ -1195,20 +1198,22 @@ public class ApplicationService : IApplicationService
                     Status = "PENDING", // Lưu các bản ghi mới vào bảng Applications với trạng thái Pending
                     AppliedAt = DateTime.UtcNow,
                     LastStageChangedAt = DateTime.UtcNow,
-                    ContactName = item.FullName.Trim(),
-                    ContactPhone = cleanPhone,
+                    ContactName = safeFullName,
+                    ContactPhone = safePhone,
                     ContactEmail = candidate.Email
                 };
 
                 _context.Applications.Add(application);
                 await _workflowGuard.ValidateCandidateIntakeAsync(application, cleanPhone, null); // Logic 1: Blacklist + chuẩn hóa SĐT
                 _workflowGuard.ApplyScoreVersionSnapshot(application, job);
+                existingCandidateIdsInJob.Add(candidate.CandidateId);
+
                 result.ImportedCount++;
                 result.ImportedApplications.Add(new ImportedApplicationSummaryDto
                 {
                     ApplicationId = application.ApplicationId,
                     CandidateId = candidate.CandidateId,
-                    FullName = item.FullName.Trim(),
+                    FullName = safeFullName,
                     Phone = cleanPhone,
                     Status = application.Status,
                     StageName = firstStage.Name,
@@ -1226,11 +1231,12 @@ public class ApplicationService : IApplicationService
                     var noteLines = item.CustomFields
                         .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
                         .Select(kv => $"• {kv.Key}: {kv.Value}");
-                    _context.ApplicationNotes.Add(new Entities.ApplicationNote
+                    pendingNotes.Add(new Entities.ApplicationNote
                     {
                         NoteId = Guid.NewGuid(),
                         ApplicationId = application.ApplicationId,
                         Note = "📋 Dữ liệu biểu mẫu Google Form:\n" + string.Join("\n", noteLines),
+                        CreatedBy = defaultAdminUserId,
                         CreatedAt = DateTime.UtcNow
                     });
                 }
@@ -1240,6 +1246,20 @@ public class ApplicationService : IApplicationService
 
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
+
+            // Lưu ApplicationNotes phụ trợ (không gây lỗi gián đoạn nếu bảng Note có cấu trúc khác)
+            if (pendingNotes.Count > 0)
+            {
+                try
+                {
+                    _context.ApplicationNotes.AddRange(pendingNotes);
+                    await _context.SaveChangesAsync();
+                }
+                catch (Exception noteEx)
+                {
+                    _logger.LogWarning(noteEx, "Không thể lưu {Count} ApplicationNotes từ Google Sheet (tiếp tục vì hồ sơ đã lưu thành công)", pendingNotes.Count);
+                }
+            }
 
             _logger.LogInformation("✅ Import Google Sheets thành công cho Job {JobTitle}: Nhập {Imported}, Trùng {Duplicate}, Bỏ qua {Skipped}",
                 job.Title, result.ImportedCount, result.DuplicateCount, result.SkippedCount);
@@ -1264,6 +1284,13 @@ public class ApplicationService : IApplicationService
             }
 
             return result;
+        }
+        catch (DbUpdateException dbEx)
+        {
+            await transaction.RollbackAsync();
+            var innerMsg = dbEx.InnerException != null ? dbEx.InnerException.Message : dbEx.Message;
+            _logger.LogError(dbEx, "❌ Lỗi cơ sở dữ liệu khi import ứng viên từ Google Sheets cho JobId {JobId}: {Inner}", request.JobId, innerMsg);
+            throw new InvalidOperationException($"Lỗi lưu cơ sở dữ liệu: {innerMsg}", dbEx);
         }
         catch (Exception ex)
         {

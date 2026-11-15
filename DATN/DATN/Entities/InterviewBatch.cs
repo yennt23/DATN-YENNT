@@ -26,11 +26,20 @@ public class InterviewBatch
     [MaxLength(30)]
     public string ShiftSlot { get; set; } = "MORNING_08_11";
 
+    [MaxLength(100)]
+    public string ShiftName { get; set; } = "Ca phỏng vấn tập trung";
+
+    [MaxLength(200)]
+    public string LocationRoom { get; set; } = "Hội trường tuyển dụng A";
+
     public int MaxCapacity { get; set; } = 50;
 
     public int CurrentCount { get; set; } = 0;
 
     public Guid? InterviewerUserId { get; set; }
+
+    [MaxLength(30)]
+    public string Status { get; set; } = "Open";
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

@@ -2,14 +2,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
-using DATN.Data;
-using DATN.Entities;
-using DATN.DTOs.Application;
-using DATN.DTOs.Interview;
-using DATN.Services.Implements;
-using DATN.Services.Interfaces;
+using UTC_DATN.Data;
+using UTC_DATN.Entities;
+using UTC_DATN.DTOs.Application;
+using UTC_DATN.DTOs.Interview;
+using UTC_DATN.Services.Implements;
+using UTC_DATN.Services.Interfaces;
 
-namespace DATN.Controllers;
+namespace UTC_DATN.Controllers;
 
 [ApiController]
 [Route("api/applications")]
@@ -18,7 +18,7 @@ public class ApplicationController : ControllerBase
     private readonly IApplicationService _applicationService;
     private readonly IInterviewService _interviewService;
     private readonly ILogger<ApplicationController> _logger;
-    private readonly DATNContext _context;
+    private readonly UTC_DATNContext _context;
     private readonly IConfiguration _configuration;
     private readonly ICampaignQrService _campaignQrService;
     private readonly IApplicationWorkflowGuardService _workflowGuard;
@@ -29,7 +29,7 @@ public class ApplicationController : ControllerBase
         IApplicationService applicationService,
         IInterviewService interviewService,
         ILogger<ApplicationController> logger,
-        DATNContext context,
+        UTC_DATNContext context,
         IConfiguration configuration,
         ICampaignQrService campaignQrService,
         IApplicationWorkflowGuardService workflowGuard,
@@ -155,7 +155,6 @@ public class ApplicationController : ControllerBase
     {
         try
         {
-            await DbInitializer.EnsureInitializedAsync(_context);
             var applications = await _applicationService.GetApplicationsByJobIdAsync(jobId);
             return Ok(new
             {
@@ -183,7 +182,6 @@ public class ApplicationController : ControllerBase
     {
         try
         {
-            await DbInitializer.EnsureInitializedAsync(_context);
             if (string.IsNullOrWhiteSpace(status))
             {
                 return BadRequest(new { success = false, message = "Trạng thái không được để trống" });
@@ -314,7 +312,6 @@ public class ApplicationController : ControllerBase
     {
         try
         {
-            await DbInitializer.EnsureInitializedAsync(_context);
             var applications = await GetIndustrialFilteredApplicationsAsync(filter);
             return Ok(new
             {
@@ -372,7 +369,6 @@ public class ApplicationController : ControllerBase
                 .Select(a => new
                 {
                     a.ApplicationId,
-                    a.Status,
                     a.Source,
                     a.ApplicationSource,
                     a.ScoringMethod,
@@ -442,7 +438,6 @@ public class ApplicationController : ControllerBase
             foreach (var app in allApps)
             {
                 if (!enrichMeta.TryGetValue(app.ApplicationId, out var m)) continue;
-                app.Status = !string.IsNullOrWhiteSpace(m.ConvertedEmployeeCode) ? "HIRED" : m.Status;
                 var resolvedSource = !string.IsNullOrWhiteSpace(m.ApplicationSource)
                     ? m.ApplicationSource
                     : (m.Source != null && m.Source.Contains("GOOGLE") ? "GOOGLE_FORM_QR"
@@ -590,7 +585,6 @@ public class ApplicationController : ControllerBase
                 .Select(a => new
                 {
                     a.ApplicationId,
-                    a.Status,
                     a.Source,
                     a.ApplicationSource,
                     a.CvFileUrl,
@@ -647,17 +641,10 @@ public class ApplicationController : ControllerBase
 
         try
         {
-            await DbInitializer.EnsureInitializedAsync(_context);
-
             Guid? actorUserId = null;
             var actorClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
             if (!string.IsNullOrEmpty(actorClaim) && Guid.TryParse(actorClaim, out var parsedActor))
                 actorUserId = parsedActor;
-
-            if (!actorUserId.HasValue)
-            {
-                actorUserId = await _context.Users.AsNoTracking().Select(u => (Guid?)u.UserId).FirstOrDefaultAsync();
-            }
 
             // Chuẩn hóa TargetStatus sang mã hệ thống
             var normalizedStatus = request.TargetStatus.Trim() switch
@@ -671,8 +658,7 @@ public class ApplicationController : ControllerBase
 
             var targetStage = await _context.PipelineStages
                 .OrderBy(s => s.SortOrder)
-                .FirstOrDefaultAsync(s => s.Code == normalizedStatus || s.Name.Contains(request.TargetStatus))
-                ?? await _context.PipelineStages.OrderBy(s => s.SortOrder).FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(s => s.Code == normalizedStatus || s.Name.Contains(request.TargetStatus));
 
             var apps = await _context.Applications
                 .Include(a => a.Candidate)
@@ -688,7 +674,7 @@ public class ApplicationController : ControllerBase
                 : new List<Guid>();
 
             var now = DateTime.UtcNow;
-            var defaultStart = DateTime.UtcNow.AddMinutes(30);
+            var defaultStart = DateTime.UtcNow.Date.AddDays(1).AddHours(2); // 09:00 giờ VN (UTC+7)
             var defaultEnd = defaultStart.AddHours(1);
 
             foreach (var app in apps)
@@ -704,51 +690,40 @@ public class ApplicationController : ControllerBase
                 {
                     app.OfferStatus = "Offer_Pending";
                 }
+
+                if (normalizedStatus == "INTERVIEW" && !existingInterviewAppIds.Contains(app.ApplicationId))
+                {
+                    var candName = app.ContactName ?? app.Candidate?.FullName ?? "Ứng viên";
+                    var jobTitle = app.Job?.Title ?? "Tuyển dụng Nhà máy";
+                    _context.Interviews.Add(new Entities.Interview
+                    {
+                        InterviewId = Guid.NewGuid(),
+                        ApplicationId = app.ApplicationId,
+                        Title = $"Phỏng vấn: {candName} - {jobTitle}",
+                        ScheduledStart = defaultStart,
+                        ScheduledEnd = defaultEnd,
+                        Location = "Phòng Phỏng vấn Nhà máy - Cổng số 2",
+                        Status = "SCHEDULED",
+                        InterviewerId = actorUserId,
+                        CreatedBy = actorUserId,
+                        CreatedAt = now
+                    });
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.Note))
+                {
+                    _context.ApplicationNotes.Add(new Entities.ApplicationNote
+                    {
+                        NoteId = Guid.NewGuid(),
+                        ApplicationId = app.ApplicationId,
+                        Note = $"[Chuyển trạng thái - {request.TargetStatus}]: {request.Note}",
+                        CreatedBy = actorUserId,
+                        CreatedAt = now
+                    });
+                }
             }
 
             await _context.SaveChangesAsync();
-
-            try
-            {
-                foreach (var app in apps)
-                {
-                    if (normalizedStatus == "INTERVIEW" && !existingInterviewAppIds.Contains(app.ApplicationId))
-                    {
-                        var candName = app.ContactName ?? app.Candidate?.FullName ?? "Ứng viên";
-                        var jobTitle = app.Job?.Title ?? "Tuyển dụng Nhà máy";
-                        _context.Interviews.Add(new Entities.Interview
-                        {
-                            InterviewId = Guid.NewGuid(),
-                            ApplicationId = app.ApplicationId,
-                            Title = $"Phỏng vấn: {candName} - {jobTitle}",
-                            ScheduledStart = defaultStart,
-                            ScheduledEnd = defaultEnd,
-                            Location = "Phòng Phỏng vấn Nhà máy - Cổng số 2",
-                            Status = "SCHEDULED",
-                            InterviewerId = actorUserId,
-                            CreatedBy = actorUserId,
-                            CreatedAt = now
-                        });
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(request.Note))
-                    {
-                        _context.ApplicationNotes.Add(new Entities.ApplicationNote
-                        {
-                            NoteId = Guid.NewGuid(),
-                            ApplicationId = app.ApplicationId,
-                            Note = $"[Chuyển trạng thái - {request.TargetStatus}]: {request.Note}",
-                            CreatedBy = actorUserId,
-                            CreatedAt = now
-                        });
-                    }
-                }
-                await _context.SaveChangesAsync();
-            }
-            catch (Exception auxEx)
-            {
-                _logger.LogWarning(auxEx, "Cảnh báo khi lưu lịch phỏng vấn / ghi chú phụ trợ trong bulk-action");
-            }
 
             return Ok(new
             {
@@ -765,7 +740,7 @@ public class ApplicationController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Lỗi khi thực hiện bulk-action cho {Count} hồ sơ", request.ApplicationIds.Count);
-            return StatusCode(500, new { success = false, message = "Có lỗi xảy ra khi xử lý hàng loạt.", detail = ex.InnerException?.Message ?? ex.Message });
+            return StatusCode(500, new { success = false, message = "Có lỗi xảy ra khi xử lý hàng loạt.", detail = ex.Message });
         }
     }
 
@@ -783,24 +758,11 @@ public class ApplicationController : ControllerBase
 
         try
         {
-            await DbInitializer.EnsureInitializedAsync(_context);
-
             var now = DateTime.UtcNow;
             var checklistJson = System.Text.Json.JsonSerializer.Serialize(request.Checklist ?? new OralInterviewChecklistDto());
             var isPassed = !string.Equals(request.TargetStatus, "Rejected", StringComparison.OrdinalIgnoreCase)
                            && !string.Equals(request.TargetStatus, "REJECTED", StringComparison.OrdinalIgnoreCase);
             var finalStatus = isPassed ? "PASSED" : "REJECTED";
-
-            Guid? actorUserId = null;
-            var actorClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            if (!string.IsNullOrEmpty(actorClaim) && Guid.TryParse(actorClaim, out var parsedActor))
-            {
-                actorUserId = parsedActor;
-            }
-            if (!actorUserId.HasValue)
-            {
-                actorUserId = await _context.Users.AsNoTracking().Select(u => (Guid?)u.UserId).FirstOrDefaultAsync();
-            }
 
             var passedStage = await _context.PipelineStages
                 .OrderBy(s => s.SortOrder)
@@ -808,24 +770,6 @@ public class ApplicationController : ControllerBase
                     ? (s.Code == "PASSED" || s.Code == "OFFER" || s.Code == "INTERVIEW")
                     : s.Code == "REJECTED")
                 ?? await _context.PipelineStages.OrderBy(s => s.SortOrder).FirstOrDefaultAsync();
-
-            if (passedStage == null)
-            {
-                passedStage = new Entities.PipelineStage
-                {
-                    StageId = isPassed ? new Guid("50000000-0000-0000-0000-000000000006") : new Guid("50000000-0000-0000-0000-000000000007"),
-                    Code = isPassed ? "PASSED" : "REJECTED",
-                    Name = isPassed ? "Đạt phỏng vấn - Chờ tiếp nhận" : "Từ chối / Không đạt",
-                    SortOrder = isPassed ? 4 : 6,
-                    IsTerminal = !isPassed,
-                    CreatedAt = now,
-                    IsSlaEnabled = isPassed,
-                    SlaMaxDays = 3,
-                    SlaWarnBeforeDays = 1
-                };
-                _context.PipelineStages.Add(passedStage);
-                await _context.SaveChangesAsync();
-            }
 
             Entities.Application? app = null;
 
@@ -842,18 +786,8 @@ public class ApplicationController : ControllerBase
                 app = await _context.Applications
                     .Include(a => a.Candidate)
                     .OrderByDescending(a => a.AppliedAt)
-                    .FirstOrDefaultAsync(a =>
-                        a.PhoneNormalized == cleanLookupPhone
-                        || a.ContactPhone == cleanLookupPhone
-                        || (a.Candidate != null && a.Candidate.Phone == cleanLookupPhone));
+                    .FirstOrDefaultAsync(a => a.PhoneNormalized == cleanLookupPhone || a.ContactPhone == cleanLookupPhone);
             }
-
-            // Tính điểm Rule Engine dựa trên Checklist phỏng vấn miệng
-            var cl = request.Checklist ?? new OralInterviewChecklistDto();
-            int passedChecks = (cl.HandEyePass ? 25 : 0)
-                             + (cl.VisionPass ? 25 : 0)
-                             + (cl.Shift12hConfirmed ? 30 : 0)
-                             + (cl.AttitudePass ? 20 : 0);
 
             // Nếu ứng viên đến trực tiếp tại cổng nhà máy (Walk-in) chưa có hồ sơ -> Tạo mới nhanh
             if (app == null)
@@ -889,138 +823,97 @@ public class ApplicationController : ControllerBase
                         FullName = request.FullName.Trim(),
                         Phone = cleanPhone,
                         Email = $"{cleanPhone}@walkin-factory.local",
-                        NormalizedEmail = $"{cleanPhone}@WALKIN-FACTORY.LOCAL",
                         Location = request.Hometown?.Trim() ?? string.Empty,
                         Headline = $"Công nhân Walk-in tại cổng - {request.FullName.Trim()}",
                         Summary = rawSummary,
                         Source = "WALK_IN",
-                        CreatedAt = now,
-                        IsDeleted = false
+                        CreatedAt = now
                     };
                     _context.Candidates.Add(candidate);
                 }
-                else
-                {
-                    app = await _context.Applications
-                        .Include(a => a.Candidate)
-                        .FirstOrDefaultAsync(a => a.JobId == targetJob.JobId && a.CandidateId == candidate.CandidateId);
-                }
 
-                if (app == null)
+                app = new Entities.Application
                 {
-                    app = new Entities.Application
-                    {
-                        ApplicationId = (request.ApplicationId.HasValue && request.ApplicationId.Value != Guid.Empty) ? request.ApplicationId.Value : Guid.NewGuid(),
-                        JobId = targetJob.JobId,
-                        CandidateId = candidate.CandidateId,
-                        CurrentStageId = passedStage.StageId,
-                        Source = "WALK_IN",
-                        ApplicationSource = "WALK_IN",
-                        ScoringMethod = "RULE_ENGINE",
-                        CvFileUrl = null,
-                        CitizenId = request.Cccd?.Trim(),
-                        PhoneNormalized = cleanPhone,
-                        RawResumeText = rawSummary,
-                        OralInterviewChecklistJson = checklistJson,
-                        Status = finalStatus,
-                        InterviewScore = passedChecks,
-                        OfferStatus = "Not_Required",
-                        MedicalCheckStatus = "Pending",
-                        AppliedAt = now,
-                        LastStageChangedAt = now,
-                        ContactName = candidate.FullName,
-                        ContactPhone = candidate.Phone,
-                        ContactEmail = candidate.Email
-                    };
-                    _context.Applications.Add(app);
-                }
-                else
-                {
-                    app.OralInterviewChecklistJson = checklistJson;
-                    app.Status = finalStatus;
-                    app.InterviewScore = passedChecks;
-                    app.LastStageChangedAt = now;
-                    app.CurrentStageId = passedStage.StageId;
-                    if (isPassed && app.ApplicationSource == "PDF_UPLOAD" && (string.IsNullOrEmpty(app.OfferStatus) || app.OfferStatus == "Not_Required"))
-                    {
-                        app.OfferStatus = "Offer_Pending";
-                    }
-                }
+                    ApplicationId = (request.ApplicationId.HasValue && request.ApplicationId.Value != Guid.Empty) ? request.ApplicationId.Value : Guid.NewGuid(),
+                    JobId = targetJob.JobId,
+                    CandidateId = candidate.CandidateId,
+                    CurrentStageId = passedStage?.StageId ?? Guid.Empty,
+                    Source = "WALK_IN",
+                    ApplicationSource = "WALK_IN",
+                    ScoringMethod = "RULE_ENGINE",
+                    CvFileUrl = null,
+                    CitizenId = request.Cccd?.Trim(),
+                    PhoneNormalized = cleanPhone,
+                    RawResumeText = rawSummary,
+                    OralInterviewChecklistJson = checklistJson,
+                    Status = finalStatus,
+                    AppliedAt = now,
+                    LastStageChangedAt = now,
+                    ContactName = candidate.FullName,
+                    ContactPhone = candidate.Phone,
+                    ContactEmail = candidate.Email
+                };
+                _context.Applications.Add(app);
             }
             else
             {
                 app.OralInterviewChecklistJson = checklistJson;
                 app.Status = finalStatus;
-                app.InterviewScore = passedChecks;
                 app.LastStageChangedAt = now;
-                app.CurrentStageId = passedStage.StageId;
+                if (passedStage != null)
+                {
+                    app.CurrentStageId = passedStage.StageId;
+                }
                 if (isPassed && app.ApplicationSource == "PDF_UPLOAD" && (string.IsNullOrEmpty(app.OfferStatus) || app.OfferStatus == "Not_Required"))
                 {
                     app.OfferStatus = "Offer_Pending";
                 }
             }
 
-            // Đồng bộ trạng thái cho tất cả bản ghi ứng tuyển của cùng ứng viên / SĐT này
-            var siblingApps = await _context.Applications
-                .Where(a => a.ApplicationId != app.ApplicationId && 
-                    (a.CandidateId == app.CandidateId || a.PhoneNormalized == app.PhoneNormalized || a.ContactPhone == app.ContactPhone))
-                .ToListAsync();
-            foreach (var sibling in siblingApps)
-            {
-                sibling.Status = finalStatus;
-                sibling.CurrentStageId = passedStage.StageId;
-                sibling.LastStageChangedAt = now;
-                if (isPassed && sibling.ApplicationSource == "PDF_UPLOAD" && (string.IsNullOrEmpty(sibling.OfferStatus) || sibling.OfferStatus == "Not_Required"))
-                {
-                    sibling.OfferStatus = "Offer_Pending";
-                }
-            }
+            // Tính điểm Rule Engine dựa trên Checklist phỏng vấn miệng
+            var cl = request.Checklist ?? new OralInterviewChecklistDto();
+            int passedChecks = (cl.HandEyePass ? 25 : 0)
+                             + (cl.VisionPass ? 25 : 0)
+                             + (cl.Shift12hConfirmed ? 30 : 0)
+                             + (cl.AttitudePass ? 20 : 0);
 
-            // Lưu trạng thái Application và Candidate vào CSDL trước
-            await _context.SaveChangesAsync();
+            app.InterviewScore = passedChecks;
 
+            var existingScore = await _context.ApplicationAiScores.FirstOrDefaultAsync(s => s.ApplicationId == app.ApplicationId);
             int returnedMatchingScore = passedChecks;
-            try
+            if (existingScore == null)
             {
-                var existingScore = await _context.ApplicationAiScores.FirstOrDefaultAsync(s => s.ApplicationId == app.ApplicationId);
-                if (existingScore == null)
+                _context.ApplicationAiScores.Add(new Entities.ApplicationAiScore
                 {
-                    _context.ApplicationAiScores.Add(new Entities.ApplicationAiScore
-                    {
-                        AiScoreId = Guid.NewGuid(),
-                        ApplicationId = app.ApplicationId,
-                        MatchingScore = passedChecks,
-                        Model = "RULE_ENGINE_ORAL",
-                        BreakdownJson = checklistJson,
-                        MatchedSkillsJson = checklistJson,
-                        CreatedAt = now
-                    });
-                }
-                else
-                {
-                    if (string.Equals(existingScore.Model, "RULE_ENGINE_ORAL", StringComparison.OrdinalIgnoreCase))
-                    {
-                        existingScore.MatchingScore = passedChecks;
-                        existingScore.BreakdownJson = checklistJson;
-                    }
-                    returnedMatchingScore = (int)Math.Round(existingScore.MatchingScore);
-                }
-
-                _context.ApplicationNotes.Add(new Entities.ApplicationNote
-                {
-                    NoteId = Guid.NewGuid(),
+                    AiScoreId = Guid.NewGuid(),
                     ApplicationId = app.ApplicationId,
-                    Note = $"⚡ [Phỏng vấn/Duyệt đạt - {(isPassed ? "ĐẠT NGAY -> ONBOARDING" : "LOẠI")}]: Tay chân={(cl.HandEyePass ? "✅" : "❌")}, Thị lực={(cl.VisionPass ? "✅" : "❌")}, Xoay ca 12h={(cl.Shift12hConfirmed ? "✅" : "❌")}, Thái độ={(cl.AttitudePass ? "✅" : "❌")}. Ghi chú: {cl.QuickNote}",
-                    CreatedBy = actorUserId,
+                    MatchingScore = passedChecks,
+                    Model = "RULE_ENGINE_ORAL",
+                    BreakdownJson = checklistJson,
+                    MatchedSkillsJson = checklistJson,
                     CreatedAt = now
                 });
-
-                await _context.SaveChangesAsync();
             }
-            catch (Exception auxEx)
+            else
             {
-                _logger.LogWarning(auxEx, "Cảnh báo khi lưu điểm/ghi chú phụ trợ cho Application {AppId}", app.ApplicationId);
+                // Giữ nguyên điểm AI Matching gốc đối với hồ sơ chấm bằng Gemini AI hoặc đã có điểm sơ loại
+                if (string.Equals(existingScore.Model, "RULE_ENGINE_ORAL", StringComparison.OrdinalIgnoreCase))
+                {
+                    existingScore.MatchingScore = passedChecks;
+                    existingScore.BreakdownJson = checklistJson;
+                }
+                returnedMatchingScore = (int)Math.Round(existingScore.MatchingScore);
             }
+
+            _context.ApplicationNotes.Add(new Entities.ApplicationNote
+            {
+                NoteId = Guid.NewGuid(),
+                ApplicationId = app.ApplicationId,
+                Note = $"⚡ [Phỏng vấn/Duyệt đạt - {(isPassed ? "ĐẠT NGAY -> ONBOARDING" : "LOẠI")}]: Tay chân={(cl.HandEyePass ? "✅" : "❌")}, Thị lực={(cl.VisionPass ? "✅" : "❌")}, Xoay ca 12h={(cl.Shift12hConfirmed ? "✅" : "❌")}, Thái độ={(cl.AttitudePass ? "✅" : "❌")}. Ghi chú: {cl.QuickNote}",
+                CreatedAt = now
+            });
+
+            await _context.SaveChangesAsync();
 
             return Ok(new
             {
@@ -1043,7 +936,7 @@ public class ApplicationController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Lỗi khi xử lý quick-walkin-eval");
-            return StatusCode(500, new { success = false, message = "Lỗi khi lưu đánh giá phỏng vấn miệng.", detail = ex.InnerException?.Message ?? ex.Message });
+            return StatusCode(500, new { success = false, message = "Lỗi khi lưu đánh giá phỏng vấn miệng.", detail = ex.Message });
         }
     }
 
@@ -1310,7 +1203,7 @@ public class ApplicationController : ControllerBase
                     explanation = aiResult.Explanation
                 }),
                 BreakdownJson = breakdownJson,
-                Model = "gemini-1.5-flash",
+                Model = "gemini-2.5-flash",
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -1423,7 +1316,8 @@ public class ApplicationController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Lỗi đồng bộ Google Sheet cho Job {JobId}", request.JobId);
-            return BadRequest(new { success = false, message = ex.Message });
+            var detail = ex.InnerException != null ? $"{ex.Message} ({ex.InnerException.Message})" : ex.Message;
+            return BadRequest(new { success = false, message = detail });
         }
     }
 

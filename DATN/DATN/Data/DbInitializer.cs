@@ -184,9 +184,12 @@ BEGIN
         BatchCode         NVARCHAR(50)      NOT NULL,
         ScheduledDate     DATE              NOT NULL,
         ShiftSlot         NVARCHAR(30)      NOT NULL,
+        ShiftName         NVARCHAR(100)     NULL CONSTRAINT DF_InterviewBatches_ShiftName DEFAULT (N'Ca phỏng vấn tập trung'),
+        LocationRoom      NVARCHAR(200)     NULL CONSTRAINT DF_InterviewBatches_LocationRoom DEFAULT (N'Hội trường tuyển dụng A'),
         MaxCapacity       INT               NOT NULL CONSTRAINT DF_InterviewBatches_MaxCapacity DEFAULT (50),
         CurrentCount      INT               NOT NULL CONSTRAINT DF_InterviewBatches_CurrentCount DEFAULT (0),
         InterviewerUserId UNIQUEIDENTIFIER  NULL,
+        Status            NVARCHAR(30)      NOT NULL CONSTRAINT DF_InterviewBatches_Status DEFAULT ('Open'),
         CreatedAt         DATETIME2         NOT NULL CONSTRAINT DF_InterviewBatches_CreatedAt DEFAULT (SYSUTCDATETIME())
     );
 END;
@@ -353,9 +356,31 @@ BEGIN
     IF COL_LENGTH('dbo.PipelineStages', 'SlaWarnBeforeDays') IS NULL ALTER TABLE dbo.PipelineStages ADD SlaWarnBeforeDays INT NULL DEFAULT (1);
 END;
 
+IF OBJECT_ID('dbo.InterviewBatches', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('dbo.InterviewBatches', 'JobId') IS NULL ALTER TABLE dbo.InterviewBatches ADD JobId UNIQUEIDENTIFIER NULL;
+    IF COL_LENGTH('dbo.InterviewBatches', 'InterviewerUserId') IS NULL ALTER TABLE dbo.InterviewBatches ADD InterviewerUserId UNIQUEIDENTIFIER NULL;
+    IF COL_LENGTH('dbo.InterviewBatches', 'LocationRoom') IS NULL 
+        ALTER TABLE dbo.InterviewBatches ADD LocationRoom NVARCHAR(200) NULL CONSTRAINT DF_InterviewBatches_LocationRoom DEFAULT (N'Hội trường tuyển dụng A');
+    ELSE
+        ALTER TABLE dbo.InterviewBatches ALTER COLUMN LocationRoom NVARCHAR(200) NULL;
+
+    IF COL_LENGTH('dbo.InterviewBatches', 'ShiftName') IS NULL 
+        ALTER TABLE dbo.InterviewBatches ADD ShiftName NVARCHAR(100) NULL CONSTRAINT DF_InterviewBatches_ShiftName DEFAULT (N'Ca phỏng vấn tập trung');
+    ELSE
+        ALTER TABLE dbo.InterviewBatches ALTER COLUMN ShiftName NVARCHAR(100) NULL;
+
+    IF COL_LENGTH('dbo.InterviewBatches', 'Status') IS NULL 
+        ALTER TABLE dbo.InterviewBatches ADD Status NVARCHAR(30) NOT NULL CONSTRAINT DF_InterviewBatches_Status DEFAULT ('Open');
+END;
+
 IF OBJECT_ID('dbo.ApplicationNotes', 'U') IS NOT NULL
 BEGIN
     ALTER TABLE dbo.ApplicationNotes ALTER COLUMN CreatedBy UNIQUEIDENTIFIER NULL;
+    IF COL_LENGTH('dbo.ApplicationNotes', 'Note') IS NULL AND COL_LENGTH('dbo.ApplicationNotes', 'Content') IS NOT NULL
+        EXEC sp_rename 'dbo.ApplicationNotes.Content', 'Note', 'COLUMN';
+    IF COL_LENGTH('dbo.ApplicationNotes', 'Note') IS NULL
+        ALTER TABLE dbo.ApplicationNotes ADD Note NVARCHAR(MAX) NULL;
 END;
 
 IF OBJECT_ID('dbo.ApplicationStageHistory', 'U') IS NOT NULL

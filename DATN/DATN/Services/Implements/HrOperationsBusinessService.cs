@@ -177,7 +177,9 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
             }
 
             // 2. Tạo InterviewBatch mới
-            var shiftCode = currentShift.Contains("MORNING") ? "SANG" : "CHIEU";
+            var isMorning = currentShift.Contains("MORNING");
+            var shiftCode = isMorning ? "SANG" : "CHIEU";
+            var shiftDisplayName = isMorning ? "Ca Sáng (08:00 - 11:30)" : "Ca Chiều (13:30 - 17:00)";
             var batchCode = $"BATCH-{jobPrefix}-{currentDate:yyyyMMdd}-{shiftCode}-{i + 1:D2}";
 
             var batch = new InterviewBatch
@@ -186,9 +188,12 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
                 BatchCode = batchCode,
                 ScheduledDate = currentDate,
                 ShiftSlot = currentShift,
+                ShiftName = shiftDisplayName,
+                LocationRoom = "Hội trường tuyển dụng A",
                 MaxCapacity = capacity,
                 CurrentCount = chunk.Length,
                 InterviewerUserId = request.InterviewerUserId != Guid.Empty ? request.InterviewerUserId : null,
+                Status = "Open",
                 CreatedAt = DateTime.UtcNow
             };
 

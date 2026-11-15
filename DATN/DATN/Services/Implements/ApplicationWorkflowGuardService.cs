@@ -8,10 +8,10 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using UglyToad.PdfPig;
-using DATN.Data;
-using DATN.Entities;
+using UTC_DATN.Data;
+using UTC_DATN.Entities;
 
-namespace DATN.Services.Implements;
+namespace UTC_DATN.Services.Implements;
 
 #region DTOs cho 7 Logic Nghiệp Vụ Kiểm Soát & Onboarding
 
@@ -140,11 +140,11 @@ public interface IApplicationWorkflowGuardService
 /// </summary>
 public class ApplicationWorkflowGuardService : IApplicationWorkflowGuardService
 {
-    private readonly DATNContext _context;
+    private readonly UTC_DATNContext _context;
     private readonly ILogger<ApplicationWorkflowGuardService> _logger;
 
     public ApplicationWorkflowGuardService(
-        DATNContext context,
+        UTC_DATNContext context,
         ILogger<ApplicationWorkflowGuardService> logger)
     {
         _context = context;
@@ -193,6 +193,11 @@ public class ApplicationWorkflowGuardService : IApplicationWorkflowGuardService
     {
         var phoneNorm = NormalizePhone(rawPhone ?? application.ContactPhone);
         var citizenNorm = NormalizeCitizenId(rawCitizenId ?? application.CitizenId);
+
+        if (!string.IsNullOrEmpty(phoneNorm) && phoneNorm.Length > 20)
+            phoneNorm = phoneNorm[..20];
+        if (!string.IsNullOrWhiteSpace(citizenNorm) && citizenNorm.Length > 20)
+            citizenNorm = citizenNorm[..20];
 
         application.PhoneNormalized = phoneNorm;
         if (!string.IsNullOrWhiteSpace(citizenNorm))
@@ -447,20 +452,18 @@ public class ApplicationWorkflowGuardService : IApplicationWorkflowGuardService
 
         if (isTargetHired)
         {
-            // Kiểm tra Offer Letter cho khối Kỹ thuật / Văn phòng (PROFESSIONAL) - chỉ chặn nếu ứng viên đã từ chối hoặc hết hạn Offer
+            // Kiểm tra Offer Letter cho khối Kỹ thuật / Văn phòng (PROFESSIONAL)
             var jobTrack = application.Job?.RecruitmentTrack ?? "PROFESSIONAL";
             if (string.Equals(jobTrack, "PROFESSIONAL", StringComparison.OrdinalIgnoreCase))
             {
-                if (string.Equals(application.OfferStatus, "Offer_Declined", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(application.OfferStatus, "Offer_Expired", StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(application.OfferStatus, "Offer_Accepted", StringComparison.OrdinalIgnoreCase))
                 {
-                    return (false, "Ứng viên khối Kỹ thuật/Văn phòng (PROFESSIONAL) đã từ chối hoặc hết hạn Offer, không thể cấp Mã nhân viên.");
+                    return (false, "Ứng viên khối Kỹ thuật/Văn phòng (PROFESSIONAL) bắt buộc phải qua bước gửi Offer và được xác nhận 'Offer_Accepted' trước khi cấp Mã nhân viên / Tiếp nhận.");
                 }
             }
 
             bool medicalPassed = string.Equals(application.MedicalCheckStatus, "Passed", StringComparison.OrdinalIgnoreCase)
-                              || string.Equals(application.MedicalCheckStatus, "PASSED", StringComparison.OrdinalIgnoreCase)
-                              || string.Equals(application.MedicalCheckStatus, "Fit", StringComparison.OrdinalIgnoreCase);
+                              || string.Equals(application.MedicalCheckStatus, "PASSED", StringComparison.OrdinalIgnoreCase);
 
             if (!medicalPassed)
             {
@@ -694,35 +697,7 @@ public class ApplicationWorkflowGuardService : IApplicationWorkflowGuardService
                 app.ConvertedEmployeeCode = newEmpCode;
                 app.Status = "Hired";
                 app.OnboardingDocsCompleted = true;
-                if (string.Equals(job?.RecruitmentTrack, "PROFESSIONAL", StringComparison.OrdinalIgnoreCase))
-                {
-                    app.OfferStatus = "Offer_Accepted";
-                }
                 app.LastStageChangedAt = DateTime.UtcNow;
-
-                var hiredStage = await _context.PipelineStages.FirstOrDefaultAsync(s => s.Code == "HIRED")
-                    ?? await _context.PipelineStages.FirstOrDefaultAsync(s => s.Name.Contains("Đã tuyển") || s.Name.Contains("Tiếp nhận"));
-                if (hiredStage != null)
-                {
-                    app.CurrentStageId = hiredStage.StageId;
-                }
-
-                // Đồng bộ cho các bản ghi ứng tuyển của cùng ứng viên/SĐT/CCCD
-                var siblingApps = await _context.Applications
-                    .Where(a => a.ApplicationId != app.ApplicationId &&
-                        (a.CandidateId == app.CandidateId || 
-                         (app.PhoneNormalized != null && a.PhoneNormalized == app.PhoneNormalized) ||
-                         (app.ContactPhone != null && a.ContactPhone == app.ContactPhone) ||
-                         (app.CitizenId != null && a.CitizenId == app.CitizenId)))
-                    .ToListAsync();
-                foreach (var sib in siblingApps)
-                {
-                    sib.ConvertedEmployeeCode = newEmpCode;
-                    sib.Status = "Hired";
-                    sib.OnboardingDocsCompleted = true;
-                    sib.LastStageChangedAt = DateTime.UtcNow;
-                    if (hiredStage != null) sib.CurrentStageId = hiredStage.StageId;
-                }
 
                 if (job != null)
                 {

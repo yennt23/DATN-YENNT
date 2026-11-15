@@ -22,7 +22,7 @@ export class CampaignQrModalComponent implements OnChanges {
   private applicationService = inject(ApplicationService);
   private toast = inject(ToastService);
 
-  activeTab: 'qr' | 'sheet-sync' | 'webhook' = 'qr';
+  activeTab: 'qr' | 'sheet-sync' = 'qr';
 
   // Copy states
   copied = false;
