@@ -1,156 +1,278 @@
-<div class="w-full">
-  <!-- Header -->
-  <div class="mb-6">
-    <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Quản lý Ứng viên</h1>
-    <p class="text-gray-600 dark:text-slate-400">Quản lý danh sách các ứng viên (Candidate) và trạng thái tài khoản</p>
-  </div>
+<div class="min-h-screen bg-slate-50 dark:bg-slate-950 p-4 md:p-6 pb-28 space-y-5">
 
-  <!-- Search & Stats -->
-  <div class="mb-6 bg-white dark:bg-slate-950 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-4">
-    <div class="flex flex-wrap items-center justify-between gap-4">
-      <!-- Search Box -->
-      <div class="flex-1 min-w-[300px]">
-        <div class="relative">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <span class="material-symbols-outlined text-gray-400">search</span>
-          </div>
-          <input type="text" [(ngModel)]="searchTerm" (keyup.enter)="loadCandidates()"
-            placeholder="Tìm kiếm theo Tên, Email, SĐT..."
-            class="block w-full pl-10 pr-3 py-2.5 border border-gray-300 dark:border-slate-700 dark:bg-slate-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm">
+  <!-- ==================== 1. HEADER & BREADCRUMBS ==================== -->
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs p-5">
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2 text-xs text-slate-500 font-medium mb-1">
+          <span>Tuyển dụng</span>
+          <span>/</span>
+          <span class="text-blue-600 dark:text-blue-400 font-semibold">Kho Nhân Tài (Talent Pool)</span>
         </div>
+        <h1 class="text-xl md:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
+          Kho Nhân Tài & Hồ Sơ Tiềm Năng (Talent Pool)
+        </h1>
+        <p class="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          Lưu trữ, tra cứu và điều phối nguồn hồ sơ ứng viên tiềm năng đạt tiêu chuẩn sẵn sàng điều chuyển sang các chiến dịch tuyển dụng mới.
+        </p>
       </div>
 
       <div class="flex items-center gap-2">
         <button (click)="loadCandidates()"
-          class="px-5 py-2.5 bg-primary hover:bg-blue-700 text-white rounded-lg text-sm font-bold transition-all shadow-sm flex items-center gap-2">
+          class="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-all shadow-2xs flex items-center gap-2 cursor-pointer">
           <span class="material-symbols-outlined text-sm">refresh</span>
-          Tải lại
+          <span>Tải lại dữ liệu</span>
         </button>
       </div>
     </div>
   </div>
 
-  <div class="flex justify-between items-center mb-6">
-    <div class="flex items-center gap-3"></div>
-    <div class="flex items-center gap-2">
-      <span class="text-sm text-gray-500 dark:text-slate-400">
-        Tổng: <span class="font-bold text-gray-900 dark:text-white">{{ totalItems }}</span> ứng viên
-      </span>
+  <!-- ==================== 2. THỐNG KÊ NHANH (METRICS) ==================== -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-medium text-slate-500">Tổng ứng viên trong kho</span>
+        <span class="material-symbols-outlined text-blue-600 text-lg">folder_shared</span>
+      </div>
+      <div class="text-2xl font-bold text-slate-900 dark:text-white mt-1">{{ stats.all }}</div>
+      <div class="text-[11px] text-slate-400 mt-0.5">Hồ sơ ứng viên thực tế</div>
+    </div>
+
+    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-medium text-emerald-600">Bảo lưu Talent Pool</span>
+        <span class="material-symbols-outlined text-emerald-600 text-lg">bookmark</span>
+      </div>
+      <div class="text-2xl font-bold text-emerald-600 mt-1">{{ stats.talentPool }}</div>
+      <div class="text-[11px] text-slate-400 mt-0.5">Sẵn sàng điều chuyển</div>
+    </div>
+
+    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-medium text-purple-600">AI Xuất sắc (≥ 90%)</span>
+        <span class="material-symbols-outlined text-purple-600 text-lg">psychology</span>
+      </div>
+      <div class="text-2xl font-bold text-purple-600 mt-1">{{ stats.highScore }}</div>
+      <div class="text-[11px] text-slate-400 mt-0.5">Khớp tiêu chuẩn kỹ thuật</div>
+    </div>
+
+    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-medium text-amber-600">Tái ứng tuyển (Rehire)</span>
+        <span class="material-symbols-outlined text-amber-600 text-lg">history</span>
+      </div>
+      <div class="text-2xl font-bold text-amber-600 mt-1">{{ stats.rehire }}</div>
+      <div class="text-[11px] text-slate-400 mt-0.5">Nhân viên cũ có tay nghề</div>
+    </div>
+  </div>
+
+  <!-- ==================== 3. SEARCH & SUB-TABS PHÂN LOẠI ==================== -->
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs p-4 space-y-3">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <!-- Search Input -->
+      <div class="flex-1 min-w-[280px]">
+        <div class="relative">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <span class="material-symbols-outlined text-slate-400 text-sm">search</span>
+          </div>
+          <input type="text" [(ngModel)]="searchTerm" (keyup.enter)="loadCandidates()"
+            placeholder="Tìm theo Tên, Email, SĐT, Kỹ năng (PLC, SMT...), Quê quán..."
+            class="block w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs transition">
+        </div>
+      </div>
+
+      <button (click)="loadCandidates()"
+        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer shadow-2xs flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-sm">search</span>
+        <span>Tìm kiếm</span>
+      </button>
+    </div>
+
+    <!-- Filter Sub-Tabs -->
+    <div class="flex items-center gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-800 overflow-x-auto">
+      <button type="button" (click)="setFilterTab('ALL')"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap"
+        [ngClass]="activeFilterTab === 'ALL' ? 'bg-blue-600 text-white shadow-2xs' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'">
+        <span>Tất cả nhân tài</span>
+        <span class="px-1.5 py-0.2 rounded-full text-[10px]" [ngClass]="activeFilterTab === 'ALL' ? 'bg-blue-700 text-white' : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200'">
+          {{ stats.all }}
+        </span>
+      </button>
+
+      <button type="button" (click)="setFilterTab('TALENT_POOL')"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap"
+        [ngClass]="activeFilterTab === 'TALENT_POOL' ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'">
+        <span>Bảo lưu Talent Pool</span>
+        <span class="px-1.5 py-0.2 rounded-full text-[10px]" [ngClass]="activeFilterTab === 'TALENT_POOL' ? 'bg-emerald-700 text-white' : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200'">
+          {{ stats.talentPool }}
+        </span>
+      </button>
+
+      <button type="button" (click)="setFilterTab('HIGH_SCORE')"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap"
+        [ngClass]="activeFilterTab === 'HIGH_SCORE' ? 'bg-purple-600 text-white shadow-2xs' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'">
+        <span>Điểm AI cao (≥ 90%)</span>
+        <span class="px-1.5 py-0.2 rounded-full text-[10px]" [ngClass]="activeFilterTab === 'HIGH_SCORE' ? 'bg-purple-700 text-white' : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200'">
+          {{ stats.highScore }}
+        </span>
+      </button>
+
+      <button type="button" (click)="setFilterTab('REHIRE')"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap"
+        [ngClass]="activeFilterTab === 'REHIRE' ? 'bg-amber-600 text-white shadow-2xs' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'">
+        <span>Nhân viên cũ tái ứng tuyển</span>
+        <span class="px-1.5 py-0.2 rounded-full text-[10px]" [ngClass]="activeFilterTab === 'REHIRE' ? 'bg-amber-700 text-white' : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200'">
+          {{ stats.rehire }}
+        </span>
+      </button>
     </div>
   </div>
 
   <!-- Loading State -->
-  <div *ngIf="isLoading" class="space-y-4">
-    <div class="bg-white dark:bg-slate-950 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 animate-pulse">
-      <div class="h-10 bg-gray-200 dark:bg-slate-700 rounded w-full"></div>
-    </div>
+  <div *ngIf="isLoading" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 shadow-xs animate-pulse text-center">
+    <div class="h-6 bg-slate-200 dark:bg-slate-700 rounded w-1/4 mx-auto mb-4"></div>
+    <div class="h-4 bg-slate-200 dark:bg-slate-700 rounded w-1/2 mx-auto"></div>
   </div>
 
-  <!-- Candidates Table -->
-  <div *ngIf="!isLoading && candidates.length > 0"
-    class="bg-white dark:bg-slate-950 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
+  <!-- ==================== 4. BẢNG DANH SÁCH ỨNG VIÊN KHO NHÂN TÀI ==================== -->
+  <div *ngIf="!isLoading && filteredCandidates.length > 0"
+    class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
     <div class="overflow-x-auto">
-      <table class="min-w-full divide-y divide-gray-200 dark:divide-slate-800">
-        <thead class="bg-gray-50 dark:bg-slate-900">
+      <table class="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
+        <thead class="bg-slate-50 dark:bg-slate-800/60">
           <tr>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">
-              Ứng viên
+            <th scope="col" class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Ứng viên & Nguồn hồ sơ
             </th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">
-              Liên hệ
+            <th scope="col" class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Vị trí & Phân xưởng
             </th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">
-              Phương thức
+            <th scope="col" class="px-5 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Điểm số & Nguồn chấm
             </th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">
+            <th scope="col" class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Kỹ năng & Điểm mạnh
+            </th>
+            <th scope="col" class="px-5 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">
               Trạng thái
             </th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">
-              Ngày tạo
-            </th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">
+            <th scope="col" class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
               Thao tác
             </th>
           </tr>
         </thead>
-        <tbody class="bg-white dark:bg-slate-950 divide-y divide-gray-200 dark:divide-slate-800">
-          <tr *ngFor="let candidate of candidates" class="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+        <tbody class="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
+          <tr *ngFor="let candidate of filteredCandidates" class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
             
-            <!-- User Info -->
-            <td class="px-6 py-4 whitespace-nowrap">
-              <div class="flex items-center">
-                <div class="flex-shrink-0 h-10 w-10">
-                  <img *ngIf="candidate.avatarUrl; else noAvatar" [src]="candidate.avatarUrl" class="h-10 w-10 rounded-full object-cover">
-                  <ng-template #noAvatar>
-                    <div class="h-10 w-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm">
-                      {{ getInitials(candidate.fullName) || 'U' }}
-                    </div>
-                  </ng-template>
+            <!-- Cột 1: Thông tin ứng viên -->
+            <td class="px-5 py-3.5 whitespace-nowrap">
+              <div class="flex items-center gap-3">
+                <div class="h-9 w-9 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold text-xs shrink-0">
+                  {{ getInitials(candidate.fullName) }}
                 </div>
-                <div class="ml-4">
-                  <div class="text-sm font-medium text-gray-900 dark:text-white">{{ candidate.fullName || '(Chưa cập nhật tên)' }}</div>
-                  <div class="text-xs text-gray-500 dark:text-slate-400">{{ candidate.email }}</div>
-                </div>
-              </div>
-            </td>
-
-            <!-- Phone -->
-            <td class="px-6 py-4 whitespace-nowrap">
-              <div class="text-sm text-gray-900 dark:text-white">{{ candidate.phone || '—' }}</div>
-            </td>
-
-            <!-- Auth Provider -->
-            <td class="px-6 py-4 whitespace-nowrap">
-              <span class="px-2 block w-fit py-0.5 rounded-full text-xs font-bold border"
-                [ngClass]="{
-                  'bg-blue-50 text-blue-700 border-blue-200': candidate.authProvider === 'Google',
-                  'bg-gray-50 text-gray-700 border-gray-200': candidate.authProvider === 'Local',
-                  'bg-purple-50 text-purple-700 border-purple-200': candidate.authProvider === 'LocalAndGoogle'
-                }">
-                {{ candidate.authProvider }}
-              </span>
-            </td>
-
-            <!-- Status -->
-            <td class="px-6 py-4">
-              <div class="flex flex-col gap-1">
-                 <span *ngIf="candidate.isActive" class="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 w-fit px-2.5 py-0.5 rounded-full text-xs font-bold">
-                    Hoạt động
-                  </span>
-                  <span *ngIf="!candidate.isActive" class="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300 w-fit px-2.5 py-0.5 rounded-full text-xs font-bold">
-                    Bị Mật Khóa
-                  </span>
-                  <div *ngIf="!candidate.isActive" class="text-xs text-red-500 mt-1">
-                    <div class="font-medium" *ngIf="candidate.lockedByName">Bởi: {{ candidate.lockedByName }}</div>
-                    <div *ngIf="candidate.lockedAt" class="text-gray-400">{{ candidate.lockedAt | date:'dd/MM/yyyy HH:mm' }}</div>
-                  </div>
-              </div>
-            </td>
-
-            <!-- Created Date -->
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400">
-              {{ candidate.createdAt | date:'dd/MM/yyyy' }}
-            </td>
-
-            <!-- Actions -->
-            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-              <div class="flex items-center gap-2">
-                <button (click)="toggleLock(candidate)" 
-                  class="flex items-center gap-1 transition-colors px-3 py-1.5 rounded-md border"
-                  [ngClass]="candidate.isActive ? 'text-red-600 border-red-200 hover:bg-red-50 bg-white' : 'text-green-600 border-green-200 hover:bg-green-50 bg-white'"
-                  [disabled]="isToggling[candidate.userId]">
-                  
-                  <ng-container *ngIf="!isToggling[candidate.userId]">
-                    <span class="material-symbols-outlined text-[18px]">
-                      {{ candidate.isActive ? 'lock' : 'lock_open' }}
+                <div>
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-sm font-semibold text-slate-900 dark:text-white">{{ candidate.fullName }}</span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                      {{ candidate.authProvider }}
                     </span>
-                    {{ candidate.isActive ? 'Khóa' : 'Mở Khóa' }}
-                  </ng-container>
-                  
-                  <ng-container *ngIf="isToggling[candidate.userId]">
-                    <span class="animate-spin text-[18px]">⏳</span>
-                    Đang xử lý...
-                  </ng-container>
+                  </div>
+                  <div class="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
+                    <span>{{ candidate.phone || '—' }}</span>
+                    <span>•</span>
+                    <span>{{ candidate.location }}</span>
+                  </div>
+                  @if (candidate.isInTalentPool) {
+                    <div class="mt-1">
+                      <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Bảo lưu Talent Pool
+                      </span>
+                    </div>
+                  }
+                  @if (candidate.isExEmployeeRehire) {
+                    <div class="mt-1">
+                      <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                        Nhân viên cũ tái ứng tuyển
+                      </span>
+                    </div>
+                  }
+                </div>
+              </div>
+            </td>
+
+            <!-- Cột 2: Vị trí & Phân xưởng -->
+            <td class="px-5 py-3.5">
+              <div class="text-xs font-semibold text-slate-900 dark:text-white">{{ candidate.jobTitle }}</div>
+              <div class="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
+                <span class="px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-mono">
+                  {{ candidate.departmentName }}
+                </span>
+              </div>
+            </td>
+
+            <!-- Cột 3: Điểm số AI -->
+            <td class="px-5 py-3.5 text-center whitespace-nowrap">
+              <div class="inline-flex flex-col items-center">
+                <span class="inline-flex items-center justify-center h-8 w-8 rounded-full text-xs font-bold border"
+                  [ngClass]="(candidate.aiMatchingScore || 0) >= 90
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                    : (candidate.aiMatchingScore || 0) >= 75
+                      ? 'bg-blue-50 text-blue-700 border-blue-300'
+                      : 'bg-rose-50 text-rose-700 border-rose-300'">
+                  {{ candidate.aiMatchingScore || 85 }}%
+                </span>
+                <span class="text-[10px] text-slate-400 mt-0.5">AI Match</span>
+              </div>
+            </td>
+
+            <!-- Cột 4: Kỹ năng nổi bật -->
+            <td class="px-5 py-3.5">
+              <div class="flex flex-wrap gap-1 max-w-[280px]">
+                @for (skill of candidate.skills; track skill) {
+                  <span class="px-2 py-0.5 rounded text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                    {{ skill }}
+                  </span>
+                }
+              </div>
+            </td>
+
+            <!-- Cột 5: Trạng thái -->
+            <td class="px-5 py-3.5 text-center whitespace-nowrap">
+              @if (candidate.isInTalentPool) {
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Bảo lưu trong kho
+                </span>
+              } @else if (candidate.isActive) {
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                  Sẵn sàng
+                </span>
+              } @else {
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                  Bị khóa
+                </span>
+              }
+            </td>
+
+            <!-- Cột 6: Thao tác -->
+            <td class="px-5 py-3.5 text-right whitespace-nowrap text-xs">
+              <div class="flex items-center justify-end gap-1.5">
+                <button type="button" (click)="viewCv(candidate)"
+                  class="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-200 font-medium transition cursor-pointer">
+                  Chi tiết CV
+                </button>
+
+                <button type="button" (click)="openTransferModal(candidate)"
+                  class="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold transition cursor-pointer shadow-2xs">
+                  Điều chuyển
+                </button>
+
+                <button type="button" (click)="toggleLock(candidate)"
+                  [title]="candidate.isActive ? 'Khóa tài khoản ứng viên' : 'Mở khóa tài khoản'"
+                  class="p-1.5 rounded-lg border transition cursor-pointer"
+                  [ngClass]="candidate.isActive ? 'border-slate-200 hover:bg-rose-50 text-slate-400 hover:text-rose-600' : 'border-emerald-200 bg-emerald-50 text-emerald-600'">
+                  <span class="material-symbols-outlined text-[16px] block">
+                    {{ candidate.isActive ? 'lock' : 'lock_open' }}
+                  </span>
                 </button>
               </div>
             </td>
@@ -159,27 +281,94 @@
       </table>
     </div>
 
-    <!-- Pagination -->
-    <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
-      <p class="text-xs text-gray-500 font-medium">
-        Hiển thị {{ (pageConfig - 1) * pageSize + 1 }} - {{ Math.min(pageConfig * pageSize, totalItems) }} trên tổng số {{ totalItems }}
-      </p>
-      <div class="flex gap-1" *ngIf="totalPages > 1">
+    <!-- Phân trang -->
+    <div class="px-5 py-3.5 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
+      <span class="text-slate-500">
+        Hiển thị {{ (pageConfig - 1) * pageSize + 1 }} - {{ Math.min(pageConfig * pageSize, totalItems) }} trên tổng số {{ totalItems }} ứng viên
+      </span>
+      <div class="flex items-center gap-1.5" *ngIf="totalPages > 1">
         <button [disabled]="pageConfig === 1" (click)="changePage(pageConfig - 1)"
-          class="p-1 px-3 border rounded-lg bg-white disabled:opacity-50">Trước</button>
-        <div class="flex items-center px-4 font-bold text-sm">{{ pageConfig }} / {{ totalPages }}</div>
+          class="px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 disabled:opacity-40 cursor-pointer">
+          Trước
+        </button>
+        <span class="px-2 font-semibold text-slate-700 dark:text-slate-300">{{ pageConfig }} / {{ totalPages }}</span>
         <button [disabled]="pageConfig === totalPages" (click)="changePage(pageConfig + 1)"
-          class="p-1 px-3 border rounded-lg bg-white disabled:opacity-50">Sau</button>
+          class="px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 disabled:opacity-40 cursor-pointer">
+          Sau
+        </button>
       </div>
     </div>
   </div>
 
   <!-- Empty State -->
-  <div *ngIf="!isLoading && candidates.length === 0" class="bg-white rounded-xl shadow-sm border p-12 text-center">
-    <div class="w-16 h-16 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">
-      <span class="material-symbols-outlined text-gray-400" style="font-size: 32px">search_off</span>
+  <div *ngIf="!isLoading && filteredCandidates.length === 0" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center shadow-xs">
+    <div class="w-14 h-14 mx-auto bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-3 text-slate-400">
+      <span class="material-symbols-outlined text-2xl">folder_off</span>
     </div>
-    <h3 class="text-lg font-medium text-gray-900">Không tìm thấy ứng viên nào</h3>
-    <p class="text-sm text-gray-500 mt-1">Vui lòng thử lại với từ khóa khác.</p>
+    <h3 class="text-sm font-bold text-slate-800 dark:text-white">Không tìm thấy ứng viên trong kho</h3>
+    <p class="text-xs text-slate-500 mt-1">Vui lòng thử lại với từ khóa hoặc bộ lọc khác.</p>
   </div>
+
+  <!-- ==================== 5. MODAL ĐIỀU CHUYỂN CHIẾN DỊCH ==================== -->
+  @if (showTransferModal && transferCandidate) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+      <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-lg w-full p-6 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-blue-600">move_up</span>
+            <h3 class="text-base font-bold text-slate-900 dark:text-white">Điều chuyển Chiến dịch Tuyển dụng</h3>
+          </div>
+          <button type="button" (click)="closeTransferModal()" class="text-slate-400 hover:text-slate-600 cursor-pointer">
+            <span class="material-symbols-outlined text-lg">close</span>
+          </button>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+            <div class="font-bold text-slate-900 dark:text-white text-sm">{{ transferCandidate.fullName }}</div>
+            <div class="text-slate-500 mt-0.5">Vị trí hiện tại: <span class="font-medium text-slate-700 dark:text-slate-300">{{ transferCandidate.jobTitle }}</span></div>
+            <div class="text-slate-500">Điểm AI: <span class="font-bold text-emerald-600">{{ transferCandidate.aiMatchingScore }}%</span></div>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Chọn Chiến dịch / Vị trí đích cần điều chuyển <span class="text-rose-500">*</span>
+            </label>
+            <select [(ngModel)]="transferTargetJobId"
+              class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500">
+              <option value="" disabled>-- Chọn chiến dịch đang mở --</option>
+              @for (job of transferAvailableJobs; track job.jobId) {
+                <option [value]="job.jobId">{{ job.title }} ({{ job.department }})</option>
+              }
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Lý do điều chuyển <span class="text-rose-500">*</span>
+            </label>
+            <textarea [(ngModel)]="transferReason" rows="3"
+              placeholder="Nhập lý do điều chuyển ứng viên sang chiến dịch mới..."
+              class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500"></textarea>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <button type="button" (click)="closeTransferModal()"
+            class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 text-xs font-semibold cursor-pointer">
+            Hủy
+          </button>
+          <button type="button" (click)="submitTransfer()" [disabled]="isTransferring"
+            class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer flex items-center gap-1.5 shadow-xs">
+            @if (isTransferring) {
+              <span>Đang xử lý...</span>
+            } @else {
+              <span class="material-symbols-outlined text-sm">check</span>
+              <span>Xác nhận điều chuyển</span>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  }
 </div>

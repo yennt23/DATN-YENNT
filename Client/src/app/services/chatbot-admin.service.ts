@@ -33,6 +33,12 @@ export interface GeminiKeyStat {
     assignedModules?: string[];
 }
 
+export interface ModuleInfo {
+    id: string;
+    name: string;
+    description: string;
+}
+
 @Injectable({
     providedIn: 'root'
 })
@@ -84,6 +90,10 @@ export class ChatbotAdminService {
         return this.http.get<GeminiKeyStat[]>(`${environment.apiUrl}/admin/gemini-keys`, { headers: this.getHeaders() });
     }
 
+    getSupportedModules(): Observable<ModuleInfo[]> {
+        return this.http.get<ModuleInfo[]>(`${environment.apiUrl}/admin/gemini-keys/supported-modules`, { headers: this.getHeaders() });
+    }
+
     disableGeminiKey(keyIndex: number): Observable<any> {
         return this.http.post(`${environment.apiUrl}/admin/gemini-keys/${keyIndex}/disable`, {}, { headers: this.getHeaders() });
     }
@@ -92,7 +102,15 @@ export class ChatbotAdminService {
         return this.http.post(`${environment.apiUrl}/admin/gemini-keys/${keyIndex}/enable`, {}, { headers: this.getHeaders() });
     }
 
-    addGeminiKey(key: string): Observable<any> {
-        return this.http.post(`${environment.apiUrl}/admin/gemini-keys/add`, { key }, { headers: this.getHeaders() });
+    deleteGeminiKey(keyIndex: number): Observable<any> {
+        return this.http.delete(`${environment.apiUrl}/admin/gemini-keys/${keyIndex}`, { headers: this.getHeaders() });
+    }
+
+    assignModules(keyIndex: number, modules: string[]): Observable<any> {
+        return this.http.put(`${environment.apiUrl}/admin/gemini-keys/${keyIndex}/modules`, { modules }, { headers: this.getHeaders() });
+    }
+
+    addGeminiKey(key: string, assignedModules?: string[]): Observable<any> {
+        return this.http.post(`${environment.apiUrl}/admin/gemini-keys/add`, { key, assignedModules }, { headers: this.getHeaders() });
     }
 }

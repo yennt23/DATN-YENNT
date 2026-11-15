@@ -66,9 +66,9 @@ export class OnboardingManagementComponent implements OnInit {
   selectedTrack = signal<string>('ALL');
   searchKeyword = signal<string>('');
 
-  // Quota & Waitlist Banner State (VD: 98 / 100)
+  // Quota & Waitlist Banner State
   targetQuantity = signal<number>(100);
-  hiredCount = signal<number>(98);
+  hiredCount = signal<number>(0);
   waitlistBufferPercent = signal<number>(15);
 
   // Selection for Floating Bulk Action Bar
@@ -179,9 +179,6 @@ export class OnboardingManagementComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    // Khởi tạo sẵn Mock Data chuẩn KCN để giao diện chạy kiểm thử được ngay
-    this.records.set(this.getInitialOnboardingMockData());
-
     const user = this.authService.currentUser();
     if (user?.departmentCode && ['PROD_LINE', 'WH_LOGS', 'TECH_MNT', 'QA_QC'].includes(user.departmentCode)) {
       this.selectedDepartment.set(user.departmentCode);
@@ -196,19 +193,14 @@ export class OnboardingManagementComponent implements OnInit {
       next: (res) => {
         this.isLoading.set(false);
         const apiList: any[] = res?.data || [];
-        if (apiList.length > 0) {
-          const mapped: OnboardingRecord[] = apiList.map((item, idx) => this.mapApiToRecord(item, idx));
-          const mockList = this.getInitialOnboardingMockData();
-          const existingIds = new Set(mapped.map(x => x.applicationId));
-          this.records.set([...mapped, ...mockList.filter(m => !existingIds.has(m.applicationId))]);
+        const mapped: OnboardingRecord[] = apiList.map((item, idx) => this.mapApiToRecord(item, idx));
+        this.records.set(mapped);
 
-          if (apiList[0]?.jobTargetQuantity) {
-            this.targetQuantity.set(apiList[0].jobTargetQuantity);
-          }
-          if (apiList[0]?.jobHiredCount !== undefined) {
-            this.hiredCount.set(apiList[0].jobHiredCount);
-          }
+        if (apiList[0]?.jobTargetQuantity) {
+          this.targetQuantity.set(apiList[0].jobTargetQuantity);
         }
+        const actualHiredCount = mapped.filter(r => r.status === 'Hired' || !!r.convertedEmployeeCode).length;
+        this.hiredCount.set(Math.max(actualHiredCount, apiList[0]?.jobHiredCount ?? 0));
       },
       error: () => {
         this.isLoading.set(false);
@@ -411,95 +403,52 @@ export class OnboardingManagementComponent implements OnInit {
       .subscribe({
         next: (res) => {
           this.isProcessingBulk.set(false);
-          this.applyLocalBulkConvertWithQuotaGuard(applicationIds);
-          if (res?.message) {
-            this.toast.success('Hoàn tất Onboarding', res.message);
+          const resultData = res?.data;
+          const items: any[] = resultData?.items || [];
+          const convertedCount = resultData?.convertedCount ?? 0;
+
+          if (convertedCount === 0 && items.length > 0) {
+            const firstSkipped = items.find(i => i.skipped || i.movedToWaitlist) || items[0];
+            this.toast.warning('Chưa thể cấp Mã NV', firstSkipped?.message || res?.message || 'Vui lòng kiểm tra lại điều kiện KSK và CCCD.');
+            this.fetchBackendOnboardingCandidates();
+            return;
           }
+
+          if (items.length > 0) {
+            const itemMap = new Map<string, any>();
+            for (const it of items) {
+              if (it.applicationId) {
+                itemMap.set(String(it.applicationId).toLowerCase(), it);
+              }
+            }
+            this.records.update(list =>
+              list.map(rec => {
+                const matched = itemMap.get(rec.applicationId.toLowerCase());
+                if (!matched || matched.skipped) return rec;
+                return {
+                  ...rec,
+                  convertedEmployeeCode: matched.convertedEmployeeCode || rec.convertedEmployeeCode,
+                  status: (matched.movedToWaitlist ? 'Waitlisted' : 'Hired') as OnboardingStatus,
+                  onboardingDocsCompleted: true,
+                  systemAccountCreated: !!matched.systemAccountCreated
+                };
+              })
+            );
+          }
+
+          this.clearSelection();
+          this.toast.success('Cấp mã nhân viên thành công', res?.message || `Đã cấp mã nhân viên cho ${convertedCount} ứng viên.`);
+          this.fetchBackendOnboardingCandidates();
         },
-        error: () => {
+        error: (err) => {
           this.isProcessingBulk.set(false);
-          this.applyLocalBulkConvertWithQuotaGuard(applicationIds);
+          this.toast.error('Lỗi cấp Mã NV', err?.error?.message || 'Không thể lưu Mã nhân viên vào CSDL.');
         }
       });
   }
 
-  private applyLocalBulkConvertWithQuotaGuard(applicationIds: string[]): void {
-    let currentHired = this.hiredCount();
-    const targetQty = this.targetQuantity();
-
-    // Tính số thứ tự mã nhân viên tiếp theo
-    let nextSeq = this.getNextEmployeeSequence();
-    let convertedCount = 0;
-    let waitlistedCount = 0;
-    let skippedCount = 0;
-    let accountsCreated = 0;
-
-    const updated = this.records().map(rec => {
-      if (!applicationIds.includes(rec.applicationId)) return rec;
-
-      // Idempotent guard: Đã có mã NV thì không sinh lại
-      if (rec.convertedEmployeeCode) {
-        skippedCount++;
-        return rec;
-      }
-
-      // Logic 4: Điều kiện cứng trước Onboarding
-      if (rec.medicalCheckStatus !== 'Passed' || !this.isValidCitizenId(rec.citizenId)) {
-        skippedCount++;
-        return rec;
-      }
-
-      // Logic 5: Quota Lock - nếu chạm trần định biên thì tự động đẩy vào Waitlisted
-      if (currentHired >= targetQty) {
-        waitlistedCount++;
-        return {
-          ...rec,
-          status: 'Waitlisted' as OnboardingStatus
-        };
-      }
-
-      const newCode = `NV-2026-${String(nextSeq).padStart(4, '0')}`;
-      nextSeq++;
-      currentHired++;
-      convertedCount++;
-
-      const createdUser = rec.recruitmentTrack === 'PROFESSIONAL' && rec.createSystemAccount;
-      if (createdUser) accountsCreated++;
-
-      return {
-        ...rec,
-        convertedEmployeeCode: newCode,
-        status: 'Hired' as OnboardingStatus,
-        onboardingDocsCompleted: true,
-        systemAccountCreated: createdUser
-      };
-    });
-
-    this.records.set(updated);
-    this.hiredCount.set(currentHired);
-    this.clearSelection();
-
-    if (convertedCount > 0 && waitlistedCount > 0) {
-      this.toast.warning(
-        'Giới hạn định biên',
-        `Đã cấp mã NV cho ${convertedCount} nhân sự. Xưởng đã đủ ${currentHired}/${targetQty} chỉ tiêu, ${waitlistedCount} ứng viên còn lại đã được chuyển sang danh sách dự bị.`
-      );
-    } else if (convertedCount === 0 && waitlistedCount > 0) {
-      this.toast.warning(
-        'Đã đủ định biên',
-        `Chỉ tiêu đã đầy (${currentHired}/${targetQty}). Đã chuyển ${waitlistedCount} ứng viên sang danh sách dự bị.`
-      );
-    } else if (convertedCount > 0) {
-      const userMsg = accountsCreated > 0 ? ` (Đã tạo ${accountsCreated} tài khoản hệ thống cho khối Kỹ sư/Văn phòng)` : '';
-      this.toast.success(
-        'Cấp mã nhân viên thành công',
-        `Đã cấp mã nhân viên cho ${convertedCount} ứng viên${userMsg}. Định biên hiện tại: ${currentHired}/${targetQty}.`
-      );
-    }
-  }
-
   private getNextEmployeeSequence(): number {
-    let maxSeq = 98;
+    let maxSeq = 0;
     for (const r of this.records()) {
       if (r.convertedEmployeeCode) {
         const match = r.convertedEmployeeCode.match(/(\d+)$/);
@@ -541,10 +490,11 @@ export class OnboardingManagementComponent implements OnInit {
         next: () => {
           this.isProcessingNoShow.set(false);
           this.applyLocalNoShow(target);
+          this.fetchBackendOnboardingCandidates();
         },
-        error: () => {
+        error: (err) => {
           this.isProcessingNoShow.set(false);
-          this.applyLocalNoShow(target);
+          this.toast.error('Lỗi xử lý No-Show', err?.error?.message || 'Không thể cập nhật trạng thái No-Show vào CSDL.');
         }
       });
   }
@@ -644,15 +594,16 @@ export class OnboardingManagementComponent implements OnInit {
     // Kiểm tra nếu là ApplicationId thực (GUID) thì gọi Backend API
     const isValidGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(record.applicationId);
     if (isValidGuid) {
-      this.http.post<any>(`${environment.apiUrl}/hr-operations/applications/${record.applicationId}/probation-feedback`, {
+      this.http.post<any>(`${environment.apiUrl}/Onboarding/applications/${record.applicationId}/probation-feedback`, {
         probationStatus: status,
         feedbackNote: isPassed ? 'Hoàn thành tốt 30 ngày thử việc' : 'Nghỉ việc trước thời hạn 30 ngày'
       }).subscribe({
         next: (res) => {
           this.toast.success(
             'Đánh giá thử việc thành công',
-            `Đã ghi nhận ${statusLabel} cho ${record.fullName} (Mã: ${record.convertedEmployeeCode}). Tỷ lệ thành công vị trí: ${res?.accuracyRate ?? 95}%`
+            `Đã ghi nhận ${statusLabel} cho ${record.fullName} (Mã: ${record.convertedEmployeeCode}).`
           );
+          this.fetchBackendOnboardingCandidates();
         },
         error: (err) => {
           this.toast.error('Lỗi', err?.error?.message || 'Không thể lưu đánh giá thử việc vào cơ sở dữ liệu.');

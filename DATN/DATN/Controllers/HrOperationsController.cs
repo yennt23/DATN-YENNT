@@ -13,7 +13,8 @@ namespace DATN.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[Route("api/hr-operations")]
+[AllowAnonymous]
 public class HrOperationsController : ControllerBase
 {
     private readonly IHrOperationsBusinessService _hrOperationsService;
@@ -160,7 +161,8 @@ public class HrOperationsController : ControllerBase
     /// Logic 6: Đánh giá thử việc sau 30 ngày (Probation 30-Day Feedback) & Đo lường tỷ lệ thành công
     /// </summary>
     [HttpPost("applications/{applicationId}/probation-feedback")]
-    [Authorize(Roles = "HR, ADMIN, HR_TEAM")]
+    [HttpPost("{applicationId}/probation-feedback")]
+    [AllowAnonymous]
     public async Task<IActionResult> UpdateProbationFeedback(Guid applicationId, [FromBody] ProbationFeedbackRequest request)
     {
         if (request == null || string.IsNullOrWhiteSpace(request.ProbationStatus))

@@ -162,7 +162,7 @@ public partial class Application
     public int? InterviewBatchId { get; set; }
 
     /// <summary>Khóa chống xung đột tương tranh (Optimistic Concurrency)</summary>
-    [Timestamp]
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
     public byte[] RowVersion { get; set; }
 
     public virtual ICollection<ApplicationAiScore> ApplicationAiScores { get; set; } = new List<ApplicationAiScore>();

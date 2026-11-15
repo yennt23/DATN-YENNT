@@ -110,16 +110,32 @@
                             </span>
                         </td>
                         <td class="px-3 py-4 text-right">
-                            <button *ngIf="k.disabled" (click)="enableKey(k)"
-                                class="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-300 dark:hover:bg-emerald-900/30 font-medium transition-colors">
-                                <span class="material-symbols-outlined text-[18px]">play_arrow</span>
-                                Bật lại
-                            </button>
-                            <button *ngIf="!k.disabled" (click)="disableKey(k)"
-                                class="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30 font-medium transition-colors">
-                                <span class="material-symbols-outlined text-[18px]">block</span>
-                                Vô hiệu hóa
-                            </button>
+                            <div class="flex items-center justify-end gap-1.5">
+                                <button (click)="openAssignModal(k)"
+                                    class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 font-medium transition-colors text-xs"
+                                    title="Phân bổ tính năng API phụ trách">
+                                    <span class="material-symbols-outlined text-[16px]">alt_route</span>
+                                    Phân bổ
+                                </button>
+                                <button *ngIf="k.disabled" (click)="enableKey(k)"
+                                    class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-300 font-medium transition-colors text-xs"
+                                    title="Kích hoạt lại">
+                                    <span class="material-symbols-outlined text-[16px]">play_arrow</span>
+                                    Bật lại
+                                </button>
+                                <button *ngIf="!k.disabled" (click)="disableKey(k)"
+                                    class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-300 font-medium transition-colors text-xs"
+                                    title="Tạm ngắt sử dụng">
+                                    <span class="material-symbols-outlined text-[16px]">block</span>
+                                    Vô hiệu hóa
+                                </button>
+                                <button (click)="deleteKey(k)"
+                                    class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-300 font-medium transition-colors text-xs"
+                                    title="Xóa vĩnh viễn key và cập nhật appsettings.json">
+                                    <span class="material-symbols-outlined text-[16px]">delete</span>
+                                    Xóa
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 </tbody>
@@ -335,7 +351,7 @@
 <!-- Modal Thêm Key mới -->
 <div *ngIf="isKeyModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
     (click)="closeAddKeyModal()">
-    <div class="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-slate-800"
+    <div class="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-lg border border-gray-200 dark:border-slate-800"
         (click)="$event.stopPropagation()">
         <div class="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-800">
             <h3 class="text-xl font-bold text-slate-900 dark:text-white">Thêm Gemini API Key mới</h3>
@@ -349,8 +365,21 @@
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Gemini API Key</label>
                 <input type="text" [(ngModel)]="newApiKey" placeholder="Nhập chuỗi AIzaSy..."
-                    class="w-full rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white px-4 py-2.5 focus:ring-primary focus:border-primary" />
-                <p class="text-xs text-gray-500 mt-1">Key đã được lưu và có hiệu lực tức thì.</p>
+                    class="w-full rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white px-4 py-2.5 focus:ring-primary focus:border-primary font-mono text-sm" />
+                <p class="text-xs text-gray-500 mt-1">Key mới sẽ tự động được ghi đè và lưu vào file <code>appsettings.json</code>.</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">Phân bổ ngay cho tính năng API (tùy chọn):</label>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-lg border border-gray-200 dark:border-slate-700">
+                    <label *ngFor="let mod of supportedModules" class="flex items-start gap-2 cursor-pointer p-1.5 hover:bg-white dark:hover:bg-slate-800 rounded transition-colors">
+                        <input type="checkbox" [(ngModel)]="newKeyModules[mod.id]" class="mt-0.5 rounded text-blue-600 focus:ring-blue-500" />
+                        <div>
+                            <div class="text-xs font-semibold text-slate-800 dark:text-slate-200">{{ mod.name }}</div>
+                            <div class="text-[11px] text-gray-500 dark:text-gray-400">{{ mod.description }}</div>
+                        </div>
+                    </label>
+                </div>
             </div>
         </div>
 
@@ -361,6 +390,62 @@
                 class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition-colors disabled:opacity-60 flex items-center gap-1">
                 <span class="material-symbols-outlined text-[18px]">save</span>
                 <span>{{ isSavingKey ? 'Đang lưu...' : 'Lưu Key' }}</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Phân bổ API cho Key -->
+<div *ngIf="isAssignModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+    (click)="closeAssignModal()">
+    <div class="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-lg border border-gray-200 dark:border-slate-800"
+        (click)="$event.stopPropagation()">
+        <div class="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-800">
+            <div>
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <span class="material-symbols-outlined text-blue-600">alt_route</span>
+                    Phân Bổ Tính Năng Cho API Key
+                </h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Cấu hình các phân hệ AI phụ trách cho key: <strong class="text-blue-600">{{ selectedKeyForAssign?.keyPreview }}</strong>
+                </p>
+            </div>
+            <button (click)="closeAssignModal()"
+                class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800">
+                <span class="material-symbols-outlined text-[24px]">close</span>
+            </button>
+        </div>
+
+        <div class="p-6 space-y-4">
+            <p class="text-xs text-slate-600 dark:text-slate-300">
+                Tích chọn các phân hệ mà bạn muốn Key này đảm nhận chính. Cấu hình sẽ được đồng bộ ngay vào file <code>appsettings.json</code>:
+            </p>
+
+            <div class="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                <label *ngFor="let mod of supportedModules"
+                    class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-700 bg-slate-50/50 dark:bg-slate-800/40 cursor-pointer transition-colors">
+                    <input type="checkbox" [(ngModel)]="selectedModulesMap[mod.id]"
+                        class="mt-1 rounded text-blue-600 focus:ring-blue-500 w-4 h-4" />
+                    <div class="flex-1">
+                        <div class="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                            {{ mod.name }}
+                            <span class="text-xs px-2 py-0.5 rounded font-mono bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                                {{ mod.id }}
+                            </span>
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ mod.description }}</div>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-200 dark:border-slate-800">
+            <button (click)="closeAssignModal()"
+                class="px-4 py-2 border border-gray-300 dark:border-slate-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800">Hủy</button>
+            <button (click)="saveModuleAssignment()" [disabled]="isSavingAssignment"
+                class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition-colors disabled:opacity-60 flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[18px]">check</span>
+                <span>{{ isSavingAssignment ? 'Đang lưu...' : 'Lưu Phân Bổ' }}</span>
             </button>
         </div>
     </div>

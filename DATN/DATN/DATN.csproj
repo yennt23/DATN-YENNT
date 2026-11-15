@@ -4,7 +4,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <UserSecretsId>2922eaf9-9ef9-4a22-abc9-563dd5baa43b</UserSecretsId>
+    <UserSecretsId>datn-yennt-9ef9-4a22-abc9-563dd5baa43b</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,6 +28,13 @@
 
   <ItemGroup>
     <Folder Include="Helpers\" />
+    <None Update="database_full_sync_and_seed.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
+
+  <Target Name="AutoMigrateDatabaseOnBuild" AfterTargets="Build">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\auto_migrate_on_build.ps1&quot;" ContinueOnError="true" />
+  </Target>
 
 </Project>

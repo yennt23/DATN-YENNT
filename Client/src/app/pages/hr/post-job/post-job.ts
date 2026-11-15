@@ -428,6 +428,7 @@ export class PostJob implements OnInit {
     };
 
     this.isGeneratingJd = true;
+    this.cdr.detectChanges();
     this.jobService.generateJd(req).subscribe({
       next: (result) => {
         this.jobForm.patchValue({
@@ -437,11 +438,13 @@ export class PostJob implements OnInit {
         });
         this.toast.success('AI gợi ý thành công!', 'Nội dung đã được điền tự động. Bạn có thể chỉnh sửa thêm.');
         this.isGeneratingJd = false;
+        this.cdr.detectChanges();
       },
       error: (err) => {
         const msg = err?.error?.message || 'Không thể kết nối AI. Vui lòng thử lại.';
         this.toast.error('AI thất bại', msg);
         this.isGeneratingJd = false;
+        this.cdr.detectChanges();
       }
     });
   }

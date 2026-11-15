@@ -20,7 +20,7 @@ export class ChatbotService {
     // State lưu trữ dữ liệu Chat xuyên suốt tất cả các màn hình (Singleton)
     public isOpen = false;
     public messages: ChatMessage[] = [
-        { role: 'bot', content: 'Xin chào! Tôi là V9 Assistant. Tôi có thể giúp gì cho bạn về các công việc tại V9 TECH?' }
+        { role: 'bot', content: 'Xin chào! Tôi là ATS Assistant - Trợ lý tuyển dụng thông minh của Hệ thống Tuyển dụng KCN & Nhà Máy ATS Industrial. Tôi có thể giúp gì cho bạn về các vị trí việc làm, chế độ đãi ngộ, thủ tục hồ sơ và quy trình thử việc?' }
     ];
 
     constructor() { }
@@ -29,7 +29,7 @@ export class ChatbotService {
     clearChat(): void {
         this.isOpen = false;
         this.messages = [
-            { role: 'bot', content: 'Xin chào! Tôi là V9 Assistant. Tôi có thể giúp gì cho bạn về các công việc tại V9 TECH?' }
+            { role: 'bot', content: 'Xin chào! Tôi là ATS Assistant - Trợ lý tuyển dụng thông minh của Hệ thống Tuyển dụng KCN & Nhà Máy ATS Industrial. Tôi có thể giúp gì cho bạn về các vị trí việc làm, chế độ đãi ngộ, thủ tục hồ sơ và quy trình thử việc?' }
         ];
     }
 

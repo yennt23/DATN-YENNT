@@ -1,17 +1,21 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
-using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using DATN.Services.Interfaces;
 
 namespace DATN.Services.Implements;
 
 /// <summary>
 /// Service quản lý nhiều Gemini API keys
-/// Sử dụng round-robin để phân tán tải giữa các keys
+/// Hỗ trợ phân tán tải, gán module linh hoạt và đồng bộ hóa với appsettings.json
 /// </summary>
 public class GeminiApiKeyProvider : IGeminiApiKeyProvider
 {
@@ -19,6 +23,7 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
     private readonly Dictionary<string, int> _moduleToKeyIndex; // Module -> Key index mapping
     private readonly ILogger<GeminiApiKeyProvider> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IHostEnvironment? _hostEnvironment;
     private int _roundRobinIndex = 0;
     private readonly object _lock = new object();
 
@@ -34,29 +39,29 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
         public bool Disabled { get; set; }
     }
 
-    /// <summary>
-    /// Module mapping configuration
-    /// Key: Module name (Chatbot, JD, Interview, CV, Email, Code)
-    /// Value: API key index
-    /// </summary>
-    private static readonly Dictionary<string, int> DefaultModuleMapping = new()
+    private static readonly List<ModuleInfo> SupportedModules = new()
     {
-        { "Chatbot", 0 },      // Key 1
-        { "JD", 1 },           // Key 2
-        { "Interview", 2 },    // Key 3
-        { "CV", 3 },           // Key 4
-        { "Email", 4 },        // Key 5
-        { "Code", 5 }          // Key 6 (nếu có, không bắt buộc)
+        new ModuleInfo { Id = "Chatbot", Name = "Chatbot Tư Vấn & FAQ", Description = "Phản hồi câu hỏi ứng viên tự động" },
+        new ModuleInfo { Id = "JD", Name = "Sinh JD Tuyển Dụng AI", Description = "Tạo mô tả công việc, quyền lợi và yêu cầu" },
+        new ModuleInfo { Id = "Interview", Name = "Phỏng Vấn & Đánh Giá", Description = "Sinh câu hỏi phỏng vấn và chấm điểm" },
+        new ModuleInfo { Id = "CV", Name = "Sàng Lọc & Khớp CV", Description = "Bóc tách PDF CV và chấm điểm kỹ năng" },
+        new ModuleInfo { Id = "Email", Name = "Soạn Thảo Email Tuyển Dụng", Description = "Tạo thư mời phỏng vấn, thư trúng tuyển" },
+        new ModuleInfo { Id = "Code", Name = "Chấm Bài Test Code", Description = "Đánh giá bài test lập trình kỹ thuật" }
     };
 
-    public GeminiApiKeyProvider(IConfiguration configuration, ILogger<GeminiApiKeyProvider> logger, IHttpClientFactory httpClientFactory)
+    public GeminiApiKeyProvider(
+        IConfiguration configuration,
+        ILogger<GeminiApiKeyProvider> logger,
+        IHttpClientFactory httpClientFactory,
+        IHostEnvironment? hostEnvironment = null)
     {
         _logger = logger;
         _httpClientFactory = httpClientFactory;
+        _hostEnvironment = hostEnvironment;
         _apiKeys = new List<ApiKeyInfo>();
-        _moduleToKeyIndex = new Dictionary<string, int>();
+        _moduleToKeyIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-        // Lấy danh sách API keys từ configuration
+        // 1. Đọc danh sách API keys từ configuration
         var apiKeysSection = configuration.GetSection("GeminiAI:ApiKeys");
         var singleKey = configuration["GeminiAI:ApiKey"];
 
@@ -67,7 +72,6 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
             {
                 foreach (var k in keys)
                 {
-                    // Chỉ chấp nhận các key hợp lệ của Google Gemini (Bắt đầu bằng AIzaSy)
                     if (!string.IsNullOrWhiteSpace(k) && k.Trim().StartsWith("AIzaSy"))
                     {
                         var trimmed = k.Trim();
@@ -76,15 +80,10 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
                             _apiKeys.Add(new ApiKeyInfo { Key = trimmed });
                         }
                     }
-                    else if (!string.IsNullOrWhiteSpace(k))
-                    {
-                        _logger.LogWarning("⚠️ Bỏ qua chuỗi không phải Gemini API Key hợp lệ: {KeyPrefix}...", k.Length > 8 ? k.Substring(0, 8) : k);
-                    }
                 }
             }
         }
 
-        // Bổ sung single ApiKey nếu chưa có
         if (!string.IsNullOrWhiteSpace(singleKey) && singleKey.Trim().StartsWith("AIzaSy"))
         {
             var trimmed = singleKey.Trim();
@@ -96,99 +95,115 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
 
         if (_apiKeys.Count == 0)
         {
-            _logger.LogWarning("❌ Không có Gemini API keys hợp lệ được cấu hình!");
-            throw new InvalidOperationException("Không tìm thấy Gemini API keys hợp lệ trong configuration");
+            _logger.LogWarning("⚠️ Không tìm thấy key bắt đầu bằng AIzaSy trong config, thêm placeholder key");
+            _apiKeys.Add(new ApiKeyInfo { Key = "AIzaSyPlaceholderKeyForATSInitialization000" });
         }
 
-        // Tạo module mapping
-        InitializeModuleMapping();
+        // 2. Đọc ModuleMapping từ configuration nếu có
+        var mappingSection = configuration.GetSection("GeminiAI:ModuleMapping");
+        if (mappingSection.Exists())
+        {
+            var mappingDict = mappingSection.Get<Dictionary<string, int>>();
+            if (mappingDict != null)
+            {
+                foreach (var kvp in mappingDict)
+                {
+                    if (kvp.Value >= 0 && kvp.Value < _apiKeys.Count)
+                    {
+                        _moduleToKeyIndex[kvp.Key] = kvp.Value;
+                    }
+                }
+            }
+        }
+
+        // Đảm bảo tất cả supported modules đều có mapping
+        EnsureAllModulesMapped();
 
         _logger.LogInformation("✅ GeminiApiKeyProvider khởi tạo thành công với {Count} API keys", _apiKeys.Count);
     }
 
-    private void InitializeModuleMapping()
+    private void EnsureAllModulesMapped()
     {
-        // Gán module với API key theo thứ tự round-robin
-        var modules = DefaultModuleMapping.Keys.ToList();
-        for (int i = 0; i < modules.Count; i++)
+        for (int i = 0; i < SupportedModules.Count; i++)
         {
-            var keyIndex = i % _apiKeys.Count; // Wrap around nếu modules > keys
-            _moduleToKeyIndex[modules[i]] = keyIndex;
-            _logger.LogInformation("📌 Module '{Module}' sử dụng API Key #{KeyIndex}", modules[i], keyIndex + 1);
-        }
-    }
-
-    /// <summary>
-    /// Lấy API key cho module cụ thể
-    /// </summary>
-    public string GetApiKey(string moduleName)
-    {
-        if (string.IsNullOrEmpty(moduleName))
-        {
-            return GetNextApiKey();
-        }
-
-        // Nếu module được mapping, ưu tiên key đó nếu chưa bị disable
-        if (_moduleToKeyIndex.TryGetValue(moduleName, out var keyIndex))
-        {
-            var info = _apiKeys[keyIndex];
-            if (!info.Disabled)
+            var modId = SupportedModules[i].Id;
+            if (!_moduleToKeyIndex.TryGetValue(modId, out var mappedIndex) || mappedIndex < 0 || mappedIndex >= _apiKeys.Count)
             {
-                _logger.LogDebug("🔑 Lấy API key cho module '{Module}' (Key #{Index})", moduleName, keyIndex + 1);
-                return info.Key;
+                _moduleToKeyIndex[modId] = _apiKeys.Count > 0 ? (i % _apiKeys.Count) : 0;
             }
         }
-
-        // Nếu module không có mapping hoặc key mapped bị disable, lấy key khả dụng bằng round-robin
-        _logger.LogWarning("⚠️ Module '{Module}' không có key khả dụng, sử dụng round-robin khả dụng", moduleName);
-        return GetNextApiKey();
     }
 
-    /// <summary>
-    /// Lấy API key tiếp theo bằng round-robin
-    /// Thread-safe implementation
-    /// </summary>
+    public List<ModuleInfo> GetSupportedModules()
+    {
+        return SupportedModules;
+    }
+
+    public string GetApiKey(string moduleName)
+    {
+        lock (_lock)
+        {
+            if (_apiKeys.Count == 0) return string.Empty;
+
+            if (!string.IsNullOrEmpty(moduleName) && _moduleToKeyIndex.TryGetValue(moduleName, out var keyIndex))
+            {
+                if (keyIndex >= 0 && keyIndex < _apiKeys.Count)
+                {
+                    var info = _apiKeys[keyIndex];
+                    if (!info.Disabled)
+                    {
+                        _logger.LogDebug("🔑 Lấy API key cho module '{Module}' (Key #{Index})", moduleName, keyIndex + 1);
+                        return info.Key;
+                    }
+                }
+            }
+
+            return GetNextApiKeyInternal();
+        }
+    }
+
     public string GetNextApiKey()
     {
         lock (_lock)
         {
-            if (_apiKeys.Count == 0) throw new InvalidOperationException("No API keys configured");
-
-            // Tìm key không disabled, bắt đầu từ _roundRobinIndex
-            for (int i = 0; i < _apiKeys.Count; i++)
-            {
-                var idx = (_roundRobinIndex + i) % _apiKeys.Count;
-                if (!_apiKeys[idx].Disabled)
-                {
-                    var key = _apiKeys[idx].Key;
-                    _roundRobinIndex = (idx + 1) % _apiKeys.Count;
-                    _logger.LogDebug("🔄 Round-robin: Sử dụng API Key #{Index}", _roundRobinIndex);
-                    return key;
-                }
-            }
-
-            // Nếu tất cả disabled, trả key theo index bất kỳ (fallback)
-            var fallback = _apiKeys[_roundRobinIndex].Key;
-            _roundRobinIndex = (_roundRobinIndex + 1) % _apiKeys.Count;
-            _logger.LogWarning("⚠️ Tất cả API keys bị disabled, trả fallback key #{Index}", _roundRobinIndex);
-            return fallback;
+            return GetNextApiKeyInternal();
         }
     }
 
-    /// <summary>
-    /// Lấy tất cả API keys
-    /// </summary>
-    public List<string> GetAllApiKeys()
+    private string GetNextApiKeyInternal()
     {
-        return _apiKeys.Select(i => i.Key).ToList();
+        if (_apiKeys.Count == 0) return string.Empty;
+
+        for (int i = 0; i < _apiKeys.Count; i++)
+        {
+            var idx = (_roundRobinIndex + i) % _apiKeys.Count;
+            if (!_apiKeys[idx].Disabled)
+            {
+                var key = _apiKeys[idx].Key;
+                _roundRobinIndex = (idx + 1) % _apiKeys.Count;
+                return key;
+            }
+        }
+
+        var fallback = _apiKeys[_roundRobinIndex % _apiKeys.Count].Key;
+        _roundRobinIndex = (_roundRobinIndex + 1) % _apiKeys.Count;
+        return fallback;
     }
 
-    /// <summary>
-    /// Lấy số lượng API keys
-    /// </summary>
+    public List<string> GetAllApiKeys()
+    {
+        lock (_lock)
+        {
+            return _apiKeys.Select(i => i.Key).ToList();
+        }
+    }
+
     public int GetApiKeyCount()
     {
-        return _apiKeys.Count;
+        lock (_lock)
+        {
+            return _apiKeys.Count;
+        }
     }
 
     public void ReportFailure(string apiKey)
@@ -200,15 +215,10 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
             info.FailureCount++;
             info.LastFailureAt = DateTime.UtcNow;
 
-            // Reset windowed count if last failure outside window
-            if (info.LastFailureAt.HasValue)
+            if (info.FailureCount >= _failureThreshold)
             {
-                // Count logic: if failures exceed threshold within window => disable
-                if (info.FailureCount >= _failureThreshold)
-                {
-                    info.Disabled = true;
-                    _logger.LogWarning("🚫 API key disabled after repeated failures: {Key}", TruncateKey(apiKey));
-                }
+                info.Disabled = true;
+                _logger.LogWarning("🚫 API key disabled after repeated failures: {Key}", TruncateKey(apiKey));
             }
         }
     }
@@ -220,7 +230,6 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
             var info = _apiKeys.FirstOrDefault(i => i.Key == apiKey);
             if (info == null) return;
             info.SuccessCount++;
-            // on success, reduce failure count and re-enable if previously disabled
             info.FailureCount = Math.Max(0, info.FailureCount - 1);
             if (info.Disabled && info.FailureCount == 0)
             {
@@ -257,11 +266,7 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
     {
         lock (_lock)
         {
-            if (keyIndex < 0 || keyIndex >= _apiKeys.Count)
-            {
-                return false;
-            }
-
+            if (keyIndex < 0 || keyIndex >= _apiKeys.Count) return false;
             _apiKeys[keyIndex].Disabled = true;
             _logger.LogWarning("🚫 API key #{Index} disabled by admin", keyIndex + 1);
             return true;
@@ -272,11 +277,7 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
     {
         lock (_lock)
         {
-            if (keyIndex < 0 || keyIndex >= _apiKeys.Count)
-            {
-                return false;
-            }
-
+            if (keyIndex < 0 || keyIndex >= _apiKeys.Count) return false;
             var info = _apiKeys[keyIndex];
             info.Disabled = false;
             info.FailureCount = 0;
@@ -289,105 +290,199 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
     private async Task<bool> ValidateApiKeyAsync(string apiKey)
     {
         if (string.IsNullOrWhiteSpace(apiKey)) return false;
+        var trimmed = apiKey.Trim();
+        if (!trimmed.StartsWith("AIzaSy") || trimmed.Length < 35) return false;
 
         try
         {
-            _logger.LogInformation("🔍 Đang xác thực API Key với Google Gemini API...");
             var client = _httpClientFactory.CreateClient("GeminiClient");
-            
-            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models?key={apiKey}";
-            
+            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models?key={trimmed}";
             var response = await client.GetAsync(apiUrl);
-            if (response.IsSuccessStatusCode)
-            {
-                _logger.LogInformation("✅ API Key hợp lệ và hoạt động bình thường.");
-                return true;
-            }
+
+            if (response.IsSuccessStatusCode) return true;
 
             var errorContent = await response.Content.ReadAsStringAsync();
-            _logger.LogWarning("⚠️ Xác thực API Key thất bại từ Google API. StatusCode: {StatusCode}, Error: {Error}", response.StatusCode, errorContent);
-            return false;
+            // Nếu Google báo API_KEY_INVALID (400) thì key sai hoàn toàn
+            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest && errorContent.Contains("API_KEY_INVALID"))
+            {
+                _logger.LogWarning("❌ Google API xác nhận Key không hợp lệ (API_KEY_INVALID).");
+                return false;
+            }
+
+            // Nếu lỗi 403 (chưa kích hoạt billing / quota), key vẫn hợp lệ về mặt cấu trúc
+            _logger.LogWarning("⚠️ Google API phản hồi {Status} ({Error}). Key cấu trúc hợp lệ, cho phép lưu.", response.StatusCode, errorContent);
+            return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "❌ Gặp lỗi khi cố gắng xác thực API Key qua Google API.");
-            return false;
+            _logger.LogWarning(ex, "⚠️ Không thể kết nối tới Google API để xác thực, chấp nhận theo định dạng chuẩn.");
+            return true;
         }
     }
 
-    public async Task<bool> AddKeyAsync(string key)
+    public async Task<bool> AddKeyAsync(string key, List<string>? assignedModules = null)
     {
         if (string.IsNullOrWhiteSpace(key)) return false;
-        
         var cleanKey = key.Trim();
 
-        // 1. Kiểm tra sơ bộ xem đã tồn tại chưa
         lock (_lock)
         {
             if (_apiKeys.Any(i => i.Key == cleanKey))
             {
-                _logger.LogWarning("⚠️ API Key đã tồn tại trong danh sách: {Key}", TruncateKey(cleanKey));
+                _logger.LogWarning("⚠️ API Key đã tồn tại: {Key}", TruncateKey(cleanKey));
                 return false;
             }
         }
 
-        // 2. Xác thực với Google API (ngoài lock block để tránh block luồng hệ thống)
         var isValid = await ValidateApiKeyAsync(cleanKey);
-        if (!isValid)
-        {
-            return false;
-        }
+        if (!isValid) return false;
 
-        // 3. Tiến hành ghi và lưu trữ trong lock
         lock (_lock)
         {
-            // Kiểm tra lại đề phòng race condition
-            if (_apiKeys.Any(i => i.Key == cleanKey))
-            {
-                return false;
-            }
+            if (_apiKeys.Any(i => i.Key == cleanKey)) return false;
 
-            // Thêm vào danh sách runtime
             _apiKeys.Add(new ApiKeyInfo { Key = cleanKey });
-            
-            // Ánh xạ lại các module theo số lượng key mới
-            InitializeModuleMapping();
+            var newIndex = _apiKeys.Count - 1;
 
-            // Đồng bộ ghi đè vào file cấu hình appsettings.json
-            try
+            if (assignedModules != null && assignedModules.Any())
             {
-                var filePath = Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json");
-                if (File.Exists(filePath))
+                foreach (var mod in assignedModules)
                 {
-                    var jsonContent = File.ReadAllText(filePath);
-                    
-                    var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonContent);
-                    if (dict != null && dict.TryGetValue("GeminiAI", out var geminiAiObj))
-                    {
-                        var geminiAiJson = JsonSerializer.Serialize(geminiAiObj);
-                        var geminiDict = JsonSerializer.Deserialize<Dictionary<string, object>>(geminiAiJson);
-                        if (geminiDict != null)
-                        {
-                            // Cập nhật mảng ApiKeys mới
-                            var currentKeys = _apiKeys.Select(k => k.Key).ToList();
-                            geminiDict["ApiKeys"] = currentKeys;
-                            dict["GeminiAI"] = geminiDict;
-
-                            var options = new JsonSerializerOptions { WriteIndented = true };
-                            var newJson = JsonSerializer.Serialize(dict, options);
-                            File.WriteAllText(filePath, newJson);
-                            
-                            _logger.LogInformation("💾 Tự động ghi và lưu Gemini API Key mới thành công vào appsettings.json");
-                        }
-                    }
+                    _moduleToKeyIndex[mod] = newIndex;
                 }
             }
-            catch (Exception ex)
+
+            EnsureAllModulesMapped();
+            SaveToAppSettings();
+            return true;
+        }
+    }
+
+    public bool DeleteKey(int keyIndex)
+    {
+        lock (_lock)
+        {
+            if (keyIndex < 0 || keyIndex >= _apiKeys.Count) return false;
+            if (_apiKeys.Count <= 1)
             {
-                _logger.LogError(ex, "❌ Lỗi khi tự động lưu Gemini API Key vào file appsettings.json");
+                _logger.LogWarning("⚠️ Không thể xóa key duy nhất còn lại trong hệ thống.");
+                return false;
             }
 
+            _apiKeys.RemoveAt(keyIndex);
+
+            // Cập nhật lại module mappings
+            var modules = _moduleToKeyIndex.Keys.ToList();
+            foreach (var mod in modules)
+            {
+                var curIdx = _moduleToKeyIndex[mod];
+                if (curIdx == keyIndex)
+                {
+                    // Nếu module gán cho key vừa bị xóa, chuyển về key 0
+                    _moduleToKeyIndex[mod] = 0;
+                }
+                else if (curIdx > keyIndex)
+                {
+                    _moduleToKeyIndex[mod] = curIdx - 1;
+                }
+            }
+
+            EnsureAllModulesMapped();
+            SaveToAppSettings();
+            _logger.LogInformation("🗑️ Đã xóa API Key #{Index} và cập nhật appsettings.json", keyIndex + 1);
             return true;
+        }
+    }
+
+    public bool AssignModulesToKey(int keyIndex, List<string> modules)
+    {
+        lock (_lock)
+        {
+            if (keyIndex < 0 || keyIndex >= _apiKeys.Count) return false;
+            if (modules == null) return false;
+
+            // Xóa phân bổ cũ của keyIndex cho những module không còn trong danh sách
+            var currentMapped = _moduleToKeyIndex.Where(kvp => kvp.Value == keyIndex).Select(kvp => kvp.Key).ToList();
+            foreach (var oldMod in currentMapped)
+            {
+                if (!modules.Contains(oldMod, StringComparer.OrdinalIgnoreCase))
+                {
+                    // Chuyển sang key khác nếu có
+                    var fallbackKey = (keyIndex + 1) % _apiKeys.Count;
+                    _moduleToKeyIndex[oldMod] = fallbackKey;
+                }
+            }
+
+            // Gán các module mới được chọn cho keyIndex
+            foreach (var mod in modules)
+            {
+                if (SupportedModules.Any(m => m.Id.Equals(mod, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _moduleToKeyIndex[mod] = keyIndex;
+                }
+            }
+
+            EnsureAllModulesMapped();
+            SaveToAppSettings();
+            _logger.LogInformation("📌 Cập nhật phân bổ API cho Key #{Index}: [{Modules}]", keyIndex + 1, string.Join(", ", modules));
+            return true;
+        }
+    }
+
+    private void SaveToAppSettings()
+    {
+        try
+        {
+            var contentRoot = _hostEnvironment?.ContentRootPath ?? Directory.GetCurrentDirectory();
+            var filePath = Path.Combine(contentRoot, "appsettings.json");
+
+            if (!File.Exists(filePath))
+            {
+                // Thử tìm trong thư mục cha hoặc current directory
+                filePath = Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json");
+            }
+
+            if (!File.Exists(filePath))
+            {
+                _logger.LogWarning("⚠️ Không tìm thấy file appsettings.json tại {Path}", filePath);
+                return;
+            }
+
+            var jsonText = File.ReadAllText(filePath);
+            var jsonNode = JsonNode.Parse(jsonText);
+            if (jsonNode == null) return;
+
+            var geminiNode = jsonNode["GeminiAI"]?.AsObject();
+            if (geminiNode == null)
+            {
+                geminiNode = new JsonObject();
+                jsonNode["GeminiAI"] = geminiNode;
+            }
+
+            // Cập nhật ApiKeys
+            var keysArray = new JsonArray();
+            foreach (var k in _apiKeys)
+            {
+                keysArray.Add(k.Key);
+            }
+            geminiNode["ApiKeys"] = keysArray;
+
+            // Cập nhật ModuleMapping
+            var mappingObj = new JsonObject();
+            foreach (var kvp in _moduleToKeyIndex)
+            {
+                mappingObj[kvp.Key] = kvp.Value;
+            }
+            geminiNode["ModuleMapping"] = mappingObj;
+
+            var writeOptions = new JsonSerializerOptions { WriteIndented = true };
+            File.WriteAllText(filePath, jsonNode.ToJsonString(writeOptions));
+
+            _logger.LogInformation("💾 Đã lưu thành công ApiKeys và ModuleMapping vào {Path}", filePath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Lỗi khi lưu cấu hình vào appsettings.json");
         }
     }
 

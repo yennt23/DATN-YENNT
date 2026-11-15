@@ -4,16 +4,19 @@ using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using DATN.Data;
 using DATN.Entities;
 using DATN.Services.Implements;
+using DATN.Services.Interfaces;
 
 namespace DATN.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[AllowAnonymous]
 public class OnboardingController : ControllerBase
 {
     private readonly DATNContext _context;
@@ -58,9 +61,11 @@ public class OnboardingController : ControllerBase
         public string LineAssignment { get; set; } = "Chuyền SMT 01";
         public int AiMatchingScore { get; set; } = 88;
         public string Status { get; set; } = "InterviewPassed"; // 'InterviewPassed' | 'Waitlisted' | 'Hired' | 'No_Show_Cancelled'
+        public string? Probation30DayStatus { get; set; }
+        public string? ProbationFeedbackNote { get; set; }
         public DateTime? OfferedDate { get; set; }
         public int JobTargetQuantity { get; set; } = 100;
-        public int JobHiredCount { get; set; } = 98;
+        public int JobHiredCount { get; set; } = 0;
         public int JobWaitlistBufferPercent { get; set; } = 15;
     }
 
@@ -113,10 +118,12 @@ public class OnboardingController : ControllerBase
     {
         try
         {
+            await DbInitializer.EnsureInitializedAsync(_context);
             var onboardingStatuses = new[]
             {
-                "OFFERED", "HIRED", "Hired", "OFFER_ACCEPTED", "PASSED",
-                "InterviewPassed", "Waitlisted", "WAITLIST", "No_Show_Cancelled"
+                "OFFERED", "OFFER", "OFFER_SENT", "Offer_Sent", "OFFER_ACCEPTED", "Offer_Accepted",
+                "Pending_Offer", "Offer_Pending", "HIRED", "Hired", "PASSED",
+                "InterviewPassed", "INTERVIEWPASSED", "Waitlisted", "WAITLIST", "No_Show_Cancelled"
             };
 
             var query = _context.Applications
@@ -125,7 +132,9 @@ public class OnboardingController : ControllerBase
                 .Include(a => a.Job)
                     .ThenInclude(j => j.DepartmentNavigation)
                 .Include(a => a.ApplicationAiScores)
-                .Where(a => onboardingStatuses.Contains(a.Status) || a.ConvertedEmployeeCode != null);
+                .Where(a => onboardingStatuses.Contains(a.Status) 
+                         || (a.OfferStatus != null && onboardingStatuses.Contains(a.OfferStatus))
+                         || a.ConvertedEmployeeCode != null);
 
             if (jobId.HasValue)
             {
@@ -139,7 +148,12 @@ public class OnboardingController : ControllerBase
 
             var result = apps.Select((a, idx) =>
             {
-                var medStatus = string.IsNullOrWhiteSpace(a.MedicalCheckStatus) ? "Pending" : a.MedicalCheckStatus;
+                var rawMed = string.IsNullOrWhiteSpace(a.MedicalCheckStatus) ? "Pending" : a.MedicalCheckStatus;
+                var medStatus = string.Equals(rawMed, "Fit", StringComparison.OrdinalIgnoreCase) || string.Equals(rawMed, "PASSED", StringComparison.OrdinalIgnoreCase)
+                    ? "Passed"
+                    : string.Equals(rawMed, "Failed", StringComparison.OrdinalIgnoreCase) || string.Equals(rawMed, "Unfit", StringComparison.OrdinalIgnoreCase)
+                        ? "Failed"
+                        : "Pending";
                 var normalizedStatus = a.ConvertedEmployeeCode != null ? "Hired"
                     : string.Equals(a.Status, "HIRED", StringComparison.OrdinalIgnoreCase) ? "Hired"
                     : string.Equals(a.Status, "Waitlisted", StringComparison.OrdinalIgnoreCase) || string.Equals(a.Status, "WAITLIST", StringComparison.OrdinalIgnoreCase) ? "Waitlisted"
@@ -181,9 +195,10 @@ public class OnboardingController : ControllerBase
                     LineAssignment = track == "PROFESSIONAL" ? "Phòng Kỹ Thuật Bảo Trì" : $"Chuyền SMT {(idx % 4) + 1}",
                     AiMatchingScore = latestScore,
                     Status = normalizedStatus,
+                    Probation30DayStatus = a.Probation30DayStatus,
                     OfferedDate = a.LastStageChangedAt != default ? a.LastStageChangedAt : a.AppliedAt,
                     JobTargetQuantity = a.Job?.TargetQuantity > 0 ? a.Job.TargetQuantity : 100,
-                    JobHiredCount = a.Job?.HiredCount > 0 ? a.Job.HiredCount : 98,
+                    JobHiredCount = a.Job?.HiredCount ?? 0,
                     JobWaitlistBufferPercent = a.Job?.WaitlistBufferPercent > 0 ? a.Job.WaitlistBufferPercent : 15
                 };
             }).ToList();
@@ -213,6 +228,7 @@ public class OnboardingController : ControllerBase
     [HttpPost("bulk-convert")]
     public async Task<IActionResult> BulkConvert([FromBody] BulkOnboardingConvertRequest request)
     {
+        await DbInitializer.EnsureInitializedAsync(_context);
         if (request == null || request.ApplicationIds == null || request.ApplicationIds.Count == 0)
         {
             return BadRequest(new { success = false, message = "Vui lòng chọn ít nhất 1 ứng viên đủ điều kiện để cấp Mã nhân viên." });
@@ -299,6 +315,7 @@ public class OnboardingController : ControllerBase
     {
         try
         {
+            await DbInitializer.EnsureInitializedAsync(_context);
             var app = await _context.Applications.FirstOrDefaultAsync(a => a.ApplicationId == id);
             if (app == null)
             {
@@ -355,7 +372,46 @@ public class OnboardingController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Lỗi khi cập nhật nhanh thông tin Onboarding cho Application {Id}", id);
+            _logger.LogError(ex, "Lỗi khi quick-update thông tin ứng viên {AppId}", id);
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// POST /api/onboarding/applications/{id}/probation-feedback
+    /// Ghi nhận kết quả thử việc 30 ngày (Passed_30Days / Early_Resigned)
+    /// </summary>
+    [HttpPost("applications/{applicationId}/probation-feedback")]
+    [HttpPost("{applicationId}/probation-feedback")]
+    public async Task<IActionResult> UpdateProbationFeedback(
+        Guid applicationId,
+        [FromBody] ProbationFeedbackRequest request,
+        [FromServices] IHrOperationsBusinessService hrOperationsService)
+    {
+        try
+        {
+            await DbInitializer.EnsureInitializedAsync(_context);
+            if (request == null || string.IsNullOrWhiteSpace(request.ProbationStatus))
+            {
+                return BadRequest(new { success = false, message = "Vui lòng chọn kết quả đánh giá thử việc 30 ngày." });
+            }
+
+            var result = await hrOperationsService.UpdateProbationFeedbackAsync(applicationId, request, null);
+            if (!result.Success)
+            {
+                return BadRequest(new { success = false, message = result.Message });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                message = result.Message,
+                accuracyRate = result.AccuracyRate
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi đánh giá thử việc ứng viên {AppId}", applicationId);
             return StatusCode(500, new { success = false, message = ex.Message });
         }
     }

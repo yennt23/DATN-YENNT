@@ -1,10 +1,11 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace DATN.Services.Interfaces;
 
 /// <summary>
 /// Interface để quản lý nhiều Gemini API keys
-/// Hỗ trợ phân tán tải để tránh bị rate limit
+/// Hỗ trợ phân tán tải và gán module phụ trách theo từng API
 /// </summary>
 public interface IGeminiApiKeyProvider
 {
@@ -44,7 +45,7 @@ public interface IGeminiApiKeyProvider
     void ReportSuccess(string apiKey);
 
     /// <summary>
-    /// Lấy thống kê các API keys (preview, success/failure counts, disabled flag)
+    /// Lấy thống kê các API keys (preview, success/failure counts, disabled flag, assigned modules)
     /// </summary>
     List<Models.GeminiKeyStat> GetKeyStats();
 
@@ -59,7 +60,30 @@ public interface IGeminiApiKeyProvider
     bool EnableKey(int keyIndex);
 
     /// <summary>
-    /// Đăng ký và xác thực Gemini API key mới vào cấu hình hệ thống
+    /// Đăng ký và thêm Gemini API key mới vào cấu hình hệ thống
     /// </summary>
-    Task<bool> AddKeyAsync(string key);
+    Task<bool> AddKeyAsync(string key, List<string>? assignedModules = null);
+
+    /// <summary>
+    /// Xóa Gemini API key theo index và cập nhật đồng bộ vào appsettings.json
+    /// </summary>
+    bool DeleteKey(int keyIndex);
+
+    /// <summary>
+    /// Phân bổ / Gán danh sách module (Chatbot, JD, Interview, CV, Email, Code) cho key theo index
+    /// và lưu vào appsettings.json
+    /// </summary>
+    bool AssignModulesToKey(int keyIndex, List<string> modules);
+
+    /// <summary>
+    /// Lấy danh sách các module/API được hỗ trợ phân bổ
+    /// </summary>
+    List<ModuleInfo> GetSupportedModules();
+}
+
+public class ModuleInfo
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
 }

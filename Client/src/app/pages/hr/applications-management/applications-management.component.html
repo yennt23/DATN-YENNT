@@ -73,6 +73,16 @@
         </span>
       </button>
 
+      <button type="button" (click)="setTab('ONBOARDED')"
+        class="inline-flex items-center gap-1.5 px-3.5 py-2 border-b-2 text-xs font-semibold transition whitespace-nowrap"
+        [class]="activeTab() === 'ONBOARDED' ? 'border-teal-600 text-teal-600' : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'">
+        <span>Đã sang Tiếp nhận / Đã tuyển</span>
+        <span class="px-1.5 py-0.5 rounded-full text-[11px]"
+          [class]="activeTab() === 'ONBOARDED' ? 'bg-teal-50 text-teal-700' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'">
+          {{ counts().onboardedOrHired }}
+        </span>
+      </button>
+
       <button type="button" (click)="setTab('TALENT_POOL')"
         class="inline-flex items-center gap-1.5 px-3.5 py-2 border-b-2 text-xs font-semibold transition whitespace-nowrap"
         [class]="activeTab() === 'TALENT_POOL' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'">
@@ -297,25 +307,79 @@
             <!-- Cột Trạng thái & Hành động -->
             <td class="p-3.5 text-right" (click)="$event.stopPropagation()">
               <div class="flex flex-col items-end gap-1.5">
-                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold"
-                  [class]="app.status === 'InterviewPassed' ? 'bg-emerald-100 text-emerald-800' : (app.status === 'SentToManager' ? 'bg-blue-100 text-blue-800' : (app.status === 'ScheduledInterview' ? 'bg-indigo-100 text-indigo-800' : (app.status === 'Rejected' ? 'bg-rose-100 text-rose-800' : 'bg-slate-150 text-slate-700')))">
-                  @if (app.status === 'InterviewPassed') { Đạt PV - Tiếp nhận }
-                  @else if (app.status === 'SentToManager') { Chờ duyệt }
-                  @else if (app.status === 'ScheduledInterview') { Đã xếp ca PV }
-                  @else if (app.status === 'Rejected') { Từ chối }
-                  @else { Mới tiếp nhận }
-                </span>
+                <div class="flex flex-wrap items-center justify-end gap-1">
+                  <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold"
+                    [class]="(app.status === 'Hired' || app.convertedEmployeeCode) ? 'bg-teal-100 text-teal-800 dark:bg-teal-950/60 dark:text-teal-300' : (app.status === 'InterviewPassed' ? 'bg-emerald-100 text-emerald-800' : (app.status === 'SentToManager' ? 'bg-blue-100 text-blue-800' : (app.status === 'ScheduledInterview' ? 'bg-indigo-100 text-indigo-800' : (app.status === 'Rejected' ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700'))))">
+                    @if (app.status === 'Hired' || app.convertedEmployeeCode) {
+                      Đã nhận việc ({{ app.convertedEmployeeCode || 'Đã cấp mã NV' }})
+                    }
+                    @else if (app.status === 'InterviewPassed') { Đạt PV - Tiếp nhận }
+                    @else if (app.status === 'SentToManager') { Chờ duyệt }
+                    @else if (app.status === 'ScheduledInterview') { Đã xếp ca PV }
+                    @else if (app.status === 'Rejected') { Từ chối }
+                    @else if (app.status === 'Saved_In_Talent_Pool') { Bảo lưu Talent Pool }
+                    @else { Mới tiếp nhận }
+                  </span>
+                  @if (app.offerStatus === 'Offer_Sent') {
+                  <span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold">Đã gửi Offer</span>
+                  } @else if (app.offerStatus === 'Offer_Accepted') {
+                  <span class="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[10px] font-semibold">Đã nhận Offer</span>
+                  }
+                </div>
 
-                <div class="flex items-center gap-1.5">
+                <div class="flex flex-wrap items-center justify-end gap-1.5">
                   <button type="button" (click)="openDrawer(app)"
-                    class="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold">
+                    class="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold cursor-pointer">
                     Chi tiết
                   </button>
-                  @if (app.status !== 'InterviewPassed') {
-                  <button type="button" (click)="evaluateOralQuick(app, 'InterviewPassed', $event)"
-                    class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold">
-                    Duyệt đạt
+
+                  @if (app.status === 'Hired' || app.convertedEmployeeCode) {
+                  <!-- Đã tuyển dụng chính thức: Chuyển sang xem hồ sơ Onboarding -->
+                  <button type="button" (click)="goToOnboarding(app, $event)"
+                    class="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold cursor-pointer flex items-center gap-1">
+                    <span>Xem Onboarding</span>
+                    <i class="fas fa-arrow-right text-[9px]"></i>
                   </button>
+                  }
+                  @else if (app.status === 'InterviewPassed') {
+                  @if (app.recruitmentTrack === 'PROFESSIONAL' && app.offerStatus !== 'Offer_Accepted') {
+                  <button type="button" (click)="openOfferModal(app, $event)"
+                    class="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold cursor-pointer">
+                    Gửi Offer
+                  </button>
+                  }
+                  <button type="button" (click)="goToOnboarding(app, $event)"
+                    class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold cursor-pointer flex items-center gap-1">
+                    <span>Sang Tiếp nhận</span>
+                    <i class="fas fa-arrow-right text-[9px]"></i>
+                  </button>
+                  }
+                  @else {
+                    @if (app.status === 'PENDING') {
+                    <button type="button" (click)="changeApplicationStage(app, 'SentToManager', $event)"
+                      class="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold cursor-pointer">
+                      Chuyển QĐ
+                    </button>
+                    }
+
+                    @if (app.status === 'SentToManager') {
+                    <button type="button" (click)="changeApplicationStage(app, 'ScheduledInterview', $event)"
+                      class="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold cursor-pointer">
+                      Xếp lịch PV
+                    </button>
+                    }
+
+                    @if (app.status === 'ScheduledInterview') {
+                    <button type="button" (click)="goToInterviews(app, $event)"
+                      class="px-2.5 py-1 rounded-lg border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-semibold cursor-pointer">
+                      Xem Lịch PV
+                    </button>
+                    }
+
+                    <button type="button" (click)="evaluateOralQuick(app, 'InterviewPassed', $event)"
+                      class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold cursor-pointer">
+                      Duyệt đạt
+                    </button>
                   }
                 </div>
               </div>
@@ -474,7 +538,11 @@
                     {{ calculateChecklistScore(app.oralChecklist) }}đ
                   </span>
 
-                  @if (app.status === 'InterviewPassed') {
+                  @if (app.status === 'Hired' || app.convertedEmployeeCode) {
+                  <span class="px-3 py-1.5 rounded-xl bg-teal-100 text-teal-800 font-semibold text-xs flex items-center gap-1">
+                    Đã nhận việc ({{ app.convertedEmployeeCode || 'NV' }})
+                  </span>
+                  } @else if (app.status === 'InterviewPassed') {
                   <span class="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 font-semibold text-xs flex items-center gap-1">
                     Đã duyệt đạt
                   </span>
@@ -663,13 +731,63 @@
             </div>
 
             <div class="flex flex-wrap gap-2 pt-2">
-              <button type="button" (click)="evaluateOralQuick(detail, 'InterviewPassed')"
-                class="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition cursor-pointer">
-                Duyệt đạt phỏng vấn
+              @if (detail.status === 'Hired' || detail.convertedEmployeeCode) {
+              <button type="button" (click)="goToOnboarding(detail, $event)"
+                class="flex-1 py-2.5 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1.5">
+                <span>Đã nhận việc ({{ detail.convertedEmployeeCode || 'NV' }}) - Xem Onboarding →</span>
               </button>
-              <button type="button" (click)="evaluateOralQuick(detail, 'Rejected')"
-                class="py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-300 dark:border-slate-700 text-xs font-semibold transition cursor-pointer">
-                Từ chối
+              }
+              @else if (detail.status === 'InterviewPassed') {
+              <button type="button" (click)="goToOnboarding(detail, $event)"
+                class="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1.5">
+                <span>Đã chuyển tiếp nhận - Sang Tiếp Nhận &amp; Onboarding →</span>
+              </button>
+              }
+              @else {
+                @if (detail.status === 'PENDING') {
+                <button type="button" (click)="changeApplicationStage(detail, 'SentToManager', $event)"
+                  class="py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition cursor-pointer">
+                  Chuyển Quản đốc duyệt
+                </button>
+                }
+                @if (detail.status === 'PENDING' || detail.status === 'SentToManager') {
+                <button type="button" (click)="changeApplicationStage(detail, 'ScheduledInterview', $event)"
+                  class="py-2.5 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition cursor-pointer">
+                  Xếp lịch phỏng vấn
+                </button>
+                }
+                <button type="button" (click)="evaluateOralQuick(detail, 'InterviewPassed')"
+                  class="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition cursor-pointer">
+                  Duyệt đạt phỏng vấn
+                </button>
+                <button type="button" (click)="evaluateOralQuick(detail, 'Rejected')"
+                  class="py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-300 dark:border-slate-700 text-xs font-semibold transition cursor-pointer">
+                  Từ chối
+                </button>
+              }
+            </div>
+
+            <!-- Các nghiệp vụ mở rộng (Offer / Điều chuyển phân xưởng / Ghi đè AI) -->
+            <div class="pt-3 border-t border-slate-200 dark:border-slate-700 flex flex-wrap gap-2">
+              @if (detail.recruitmentTrack === 'PROFESSIONAL') {
+              <button type="button" (click)="openOfferModal(detail, $event)"
+                class="px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-semibold cursor-pointer">
+                Gửi Offer Letter
+              </button>
+              @if (detail.offerStatus === 'Offer_Sent') {
+              <button type="button" (click)="submitRespondOffer(detail, true, $event)"
+                class="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold cursor-pointer">
+                Xác nhận Nhận Offer
+              </button>
+              }
+              }
+              <button type="button" (click)="openTransferModal(detail, $event)"
+                class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 text-[11px] font-semibold cursor-pointer">
+                Điều chuyển phân xưởng
+              </button>
+              <button type="button" (click)="openOverrideModal(detail, $event)"
+                class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 text-[11px] font-semibold cursor-pointer">
+                Ghi đè kết quả AI
               </button>
             </div>
           </div>
@@ -1035,6 +1153,100 @@
               <span>Xác nhận xếp ca</span>
             }
           </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  }
+
+  <!-- ==================== MODAL 4: GHI ĐÈ KẾT QUẢ AI (HUMAN OVERRIDE) ==================== -->
+  @if (showOverrideModal() && overrideModalApp(); as ovApp) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4" (click)="showOverrideModal.set(false)">
+    <div class="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden" (click)="$event.stopPropagation()">
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <h3 class="text-base font-bold">Ghi Đè Kết Quả AI (Human Override)</h3>
+        <button type="button" (click)="showOverrideModal.set(false)" class="text-white/80 hover:text-white cursor-pointer">✕</button>
+      </div>
+      <div class="p-6 space-y-4 text-xs">
+        <div class="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-medium">
+          Ứng viên: <b>{{ ovApp.candidateName }}</b> ({{ ovApp.phone }}) — Điểm hiện tại: <b>{{ ovApp.aiMatchingScore }}%</b>
+        </div>
+        <div>
+          <label class="font-bold text-slate-700 dark:text-slate-300 block mb-1">Quyết định của HR / Quản đốc:</label>
+          <select [ngModel]="overrideToPassed()" (ngModelChange)="overrideToPassed.set($event === 'true' || $event === true)"
+            class="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <option [ngValue]="true">Chuyển sang Đạt sơ loại / Chờ phỏng vấn</option>
+            <option [ngValue]="false">Từ chối hồ sơ</option>
+          </select>
+        </div>
+        <div>
+          <label class="font-bold text-slate-700 dark:text-slate-300 block mb-1">Lý do ghi đè bắt buộc (Audit Log):</label>
+          <textarea rows="3" [ngModel]="overrideReason()" (ngModelChange)="overrideReason.set($event)"
+            class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"></textarea>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button type="button" (click)="showOverrideModal.set(false)" class="px-4 py-2 rounded-xl border border-slate-300 font-semibold cursor-pointer">Hủy</button>
+          <button type="button" (click)="submitOverrideAi()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold cursor-pointer">Lưu quyết định</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  }
+
+  <!-- ==================== MODAL 5: ĐIỀU CHUYỂN PHÂN XƯỞNG / CHIẾN DỊCH ==================== -->
+  @if (showTransferModal() && transferModalApp(); as trApp) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4" (click)="showTransferModal.set(false)">
+    <div class="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden" (click)="$event.stopPropagation()">
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <h3 class="text-base font-bold">Điều Chuyển Phân Xưởng — {{ trApp.candidateName }}</h3>
+        <button type="button" (click)="showTransferModal.set(false)" class="text-white/80 hover:text-white cursor-pointer">✕</button>
+      </div>
+      <div class="p-6 space-y-4 text-xs">
+        <div>
+          <label class="font-bold text-slate-700 dark:text-slate-300 block mb-1">Chọn Chiến dịch / Phân xưởng đích:</label>
+          <select [ngModel]="transferTargetJobId()" (ngModelChange)="transferTargetJobId.set($event)"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800">
+            @for (j of transferAvailableJobs(); track j.jobId) {
+            <option [value]="j.jobId">{{ j.title }} ({{ j.department }})</option>
+            }
+          </select>
+        </div>
+        <div>
+          <label class="font-bold text-slate-700 dark:text-slate-300 block mb-1">Lý do điều chuyển:</label>
+          <textarea rows="3" [ngModel]="transferReason()" (ngModelChange)="transferReason.set($event)"
+            class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"></textarea>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button type="button" (click)="showTransferModal.set(false)" class="px-4 py-2 rounded-xl border border-slate-300 font-semibold cursor-pointer">Hủy</button>
+          <button type="button" (click)="submitTransferJob()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold cursor-pointer">Xác nhận điều chuyển</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  }
+
+  <!-- ==================== MODAL 6: GỬI OFFER LETTER (KHỐI KỸ THUẬT / VĂN PHÒNG) ==================== -->
+  @if (showOfferModal() && offerModalApp(); as ofApp) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4" (click)="showOfferModal.set(false)">
+    <div class="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden" (click)="$event.stopPropagation()">
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <h3 class="text-base font-bold">Gửi Thư Mời Nhận Việc (Offer Letter) — {{ ofApp.candidateName }}</h3>
+        <button type="button" (click)="showOfferModal.set(false)" class="text-white/80 hover:text-white cursor-pointer">✕</button>
+      </div>
+      <div class="p-6 space-y-4 text-xs">
+        <div>
+          <label class="font-bold text-slate-700 dark:text-slate-300 block mb-1">Mức lương thỏa thuận (VNĐ):</label>
+          <input type="number" [ngModel]="offeredSalary()" (ngModelChange)="offeredSalary.set($event)"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono font-bold" />
+        </div>
+        <div>
+          <label class="font-bold text-slate-700 dark:text-slate-300 block mb-1">Ghi chú chế độ đãi ngộ &amp; Ngày nhận việc:</label>
+          <textarea rows="3" [ngModel]="offerNote()" (ngModelChange)="offerNote.set($event)"
+            class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"></textarea>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button type="button" (click)="showOfferModal.set(false)" class="px-4 py-2 rounded-xl border border-slate-300 font-semibold cursor-pointer">Hủy</button>
+          <button type="button" (click)="submitSendOffer()" class="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold cursor-pointer">Gửi Offer ngay</button>
         </div>
       </div>
     </div>

@@ -2,7 +2,7 @@ import { Component, OnDestroy, OnInit, ChangeDetectorRef, NgZone } from '@angula
 import { CommonModule } from '@angular/common';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ChatbotAdminService, ChatbotFaqItem, GeminiKeyStat, UpsertChatbotFaqPayload } from '../../../services/chatbot-admin.service';
+import { ChatbotAdminService, ChatbotFaqItem, GeminiKeyStat, ModuleInfo, UpsertChatbotFaqPayload } from '../../../services/chatbot-admin.service';
 import { ToastService } from '../../../services/toast.service';
 import { PopupService } from '../../../services/popup.service';
 
@@ -25,9 +25,21 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
     isKeysLoading = false;
     isModalOpen = false;
     isSaving = false;
+
+    // Quản lý Thêm Key
     isKeyModalOpen = false;
     newApiKey = '';
     isSavingKey = false;
+    newKeyModules: { [key: string]: boolean } = {};
+
+    // Quản lý Phân bổ module cho Key
+    isAssignModalOpen = false;
+    selectedKeyForAssign: GeminiKeyStat | null = null;
+    selectedModulesMap: { [key: string]: boolean } = {};
+    isSavingAssignment = false;
+
+    supportedModules: ModuleInfo[] = [];
+
     modalMode: 'create' | 'edit' = 'create';
     editingFaqId: string | null = null;
     private keyRefreshHandle: ReturnType<typeof setInterval> | null = null;
@@ -52,6 +64,7 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
     ngOnInit(): void {
         this.loadFaqs();
         this.loadKeyStats();
+        this.loadSupportedModules();
         this.startKeyAutoRefresh();
     }
 
@@ -60,6 +73,26 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
             clearInterval(this.keyRefreshHandle);
             this.keyRefreshHandle = null;
         }
+    }
+
+    loadSupportedModules(): void {
+        this.chatbotAdminService.getSupportedModules().subscribe({
+            next: (mods) => {
+                this.supportedModules = mods || [];
+                this.cdr.detectChanges();
+            },
+            error: () => {
+                this.supportedModules = [
+                    { id: 'Chatbot', name: 'Chatbot Tư Vấn & FAQ', description: 'Phản hồi câu hỏi ứng viên tự động' },
+                    { id: 'JD', name: 'Sinh JD Tuyển Dụng AI', description: 'Tạo mô tả công việc, quyền lợi và yêu cầu' },
+                    { id: 'Interview', name: 'Phỏng Vấn & Đánh Giá', description: 'Sinh câu hỏi phỏng vấn và chấm điểm' },
+                    { id: 'CV', name: 'Sàng Lọc & Khớp CV', description: 'Bóc tách PDF CV và chấm điểm kỹ năng' },
+                    { id: 'Email', name: 'Soạn Thảo Email Tuyển Dụng', description: 'Tạo thư mời phỏng vấn, thư trúng tuyển' },
+                    { id: 'Code', name: 'Chấm Bài Test Code', description: 'Đánh giá bài test lập trình kỹ thuật' }
+                ];
+                this.cdr.detectChanges();
+            }
+        });
     }
 
     loadKeyStats(): void {
@@ -158,15 +191,14 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
     }
 
     closeModal(): void {
-        if (this.isSaving) {
-            return;
-        }
+        if (this.isSaving) return;
         this.isModalOpen = false;
+        this.editingFaqId = null;
     }
 
     saveFaq(): void {
         if (!this.form.question.trim() || !this.form.answer.trim()) {
-            this.toast.warning('Thiếu dữ liệu', 'Câu hỏi và câu trả lời là bắt buộc.');
+            this.toast.warning('Thiếu dữ liệu', 'Vui lòng nhập đầy đủ câu hỏi và câu trả lời.');
             return;
         }
 
@@ -174,21 +206,21 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
         const payload: UpsertChatbotFaqPayload = {
             question: this.form.question.trim(),
             answer: this.form.answer.trim(),
-            category: this.form.category?.trim() || 'Chung',
+            category: this.form.category.trim() || 'Chung',
             keywords: this.form.keywords?.trim() || '',
             priority: Number(this.form.priority) || 0,
             isActive: this.form.isActive
         };
 
-        const request$ = this.modalMode === 'create'
+        const req$ = this.modalMode === 'create'
             ? this.chatbotAdminService.createFaq(payload)
             : this.chatbotAdminService.updateFaq(this.editingFaqId!, payload);
 
-        request$.subscribe({
+        req$.subscribe({
             next: (res) => {
                 this.isSaving = false;
-                this.isModalOpen = false;
-                this.toast.success('Thành công', res?.message || 'Lưu FAQ thành công.');
+                this.toast.success('Thành công', res?.message || 'Đã lưu FAQ.');
+                this.closeModal();
                 this.loadFaqs();
             },
             error: (err) => {
@@ -198,36 +230,22 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
         });
     }
 
-    async toggleFaq(item: ChatbotFaqItem): Promise<void> {
-        const confirmed = await this.popup.confirm({
-            title: item.isActive ? 'Tắt FAQ' : 'Bật FAQ',
-            message: item.isActive
-                ? 'FAQ sẽ không còn được dùng để trả lời nhanh.'
-                : 'FAQ sẽ được dùng cho lớp trả lời nhanh trước AI.',
-            confirmText: item.isActive ? 'Tắt' : 'Bật',
-            cancelText: 'Hủy',
-            tone: item.isActive ? 'danger' : 'primary'
-        });
-
-        if (!confirmed) {
-            return;
-        }
-
+    toggleFaq(item: ChatbotFaqItem): void {
         this.chatbotAdminService.toggleFaq(item.faqId).subscribe({
             next: (res) => {
-                this.toast.success('Thành công', res?.message || 'Cập nhật trạng thái thành công.');
-                this.loadFaqs();
+                item.isActive = res.isActive;
+                this.toast.success('Thành công', res?.message || 'Đã cập nhật trạng thái.');
             },
             error: (err) => {
-                this.toast.error('Lỗi', err.error?.message || 'Không thể cập nhật trạng thái FAQ.');
+                this.toast.error('Lỗi', err.error?.message || 'Không thể đổi trạng thái FAQ.');
             }
         });
     }
 
     async deleteFaq(item: ChatbotFaqItem): Promise<void> {
         const confirmed = await this.popup.confirm({
-            title: 'Xóa FAQ',
-            message: 'FAQ sẽ bị xóa vĩnh viễn. Bạn có chắc muốn tiếp tục?',
+            title: 'Xóa câu trả lời FAQ',
+            message: `Bạn có chắc muốn xóa FAQ: "${item.question}"?`,
             confirmText: 'Xóa',
             cancelText: 'Hủy',
             tone: 'danger'
@@ -239,7 +257,7 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
 
         this.chatbotAdminService.deleteFaq(item.faqId).subscribe({
             next: (res) => {
-                this.toast.success('Thành công', res?.message || 'Xóa FAQ thành công.');
+                this.toast.success('Thành công', res?.message || 'Đã xóa FAQ.');
                 this.loadFaqs();
             },
             error: (err) => {
@@ -264,7 +282,7 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
     async disableKey(item: GeminiKeyStat): Promise<void> {
         const confirmed = await this.popup.confirm({
             title: 'Vô hiệu hóa key',
-            message: `Bạn muốn tắt key ${item.keyPreview} khỏi vòng xoay sử dụng?`,
+            message: `Bạn muốn tạm ngắt key ${item.keyPreview} khỏi vòng xoay sử dụng?`,
             confirmText: 'Vô hiệu hóa',
             cancelText: 'Hủy',
             tone: 'danger'
@@ -309,8 +327,73 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
         });
     }
 
+    async deleteKey(item: GeminiKeyStat): Promise<void> {
+        const confirmed = await this.popup.confirm({
+            title: 'Xóa vĩnh viễn Gemini API Key',
+            message: `Bạn có chắc chắn muốn xóa key ${item.keyPreview}? Key này sẽ bị gỡ bỏ vĩnh viễn khỏi hệ thống và đồng bộ cập nhật vào appsettings.json.`,
+            confirmText: 'Xóa key',
+            cancelText: 'Hủy',
+            tone: 'danger'
+        });
+
+        if (!confirmed) {
+            return;
+        }
+
+        this.chatbotAdminService.deleteGeminiKey(item.keyIndex).subscribe({
+            next: (res) => {
+                this.toast.success('Thành công', res?.message || 'Đã xóa key thành công.');
+                this.loadKeyStats();
+            },
+            error: (err) => {
+                this.toast.error('Lỗi', err.error?.message || 'Không thể xóa key.');
+            }
+        });
+    }
+
+    openAssignModal(item: GeminiKeyStat): void {
+        this.selectedKeyForAssign = item;
+        this.selectedModulesMap = {};
+        for (const m of this.supportedModules) {
+            this.selectedModulesMap[m.id] = (item.assignedModules || []).includes(m.id);
+        }
+        this.isAssignModalOpen = true;
+        this.cdr.detectChanges();
+    }
+
+    closeAssignModal(): void {
+        if (this.isSavingAssignment) return;
+        this.isAssignModalOpen = false;
+        this.selectedKeyForAssign = null;
+        this.cdr.detectChanges();
+    }
+
+    saveModuleAssignment(): void {
+        if (!this.selectedKeyForAssign) return;
+        this.isSavingAssignment = true;
+        const selected = Object.keys(this.selectedModulesMap).filter(k => this.selectedModulesMap[k]);
+
+        this.chatbotAdminService.assignModules(this.selectedKeyForAssign.keyIndex, selected).subscribe({
+            next: (res) => {
+                this.isSavingAssignment = false;
+                this.isAssignModalOpen = false;
+                this.selectedKeyForAssign = null;
+                this.toast.success('Thành công', res?.message || 'Đã cập nhật phân bổ tính năng API.');
+                this.loadKeyStats();
+                this.cdr.detectChanges();
+            },
+            error: (err) => {
+                this.isSavingAssignment = false;
+                this.toast.error('Lỗi', err.error?.message || 'Không thể cập nhật phân bổ module.');
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
     openAddKeyModal(): void {
         this.newApiKey = '';
+        this.newKeyModules = {};
+        // Mặc định chọn không tick hoặc tick gợi ý
         this.isKeyModalOpen = true;
         this.cdr.detectChanges();
     }
@@ -318,6 +401,7 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
     closeAddKeyModal(): void {
         if (this.isSavingKey) return;
         this.newApiKey = '';
+        this.newKeyModules = {};
         this.isKeyModalOpen = false;
         this.cdr.detectChanges();
     }
@@ -332,12 +416,15 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
         this.isSavingKey = true;
         this.cdr.detectChanges();
 
-        this.chatbotAdminService.addGeminiKey(key).subscribe({
+        const selectedModules = Object.keys(this.newKeyModules).filter(k => this.newKeyModules[k]);
+
+        this.chatbotAdminService.addGeminiKey(key, selectedModules).subscribe({
             next: (res) => {
                 this.isSavingKey = false;
                 this.isKeyModalOpen = false;
                 this.newApiKey = '';
-                this.toast.success('Thành công', res?.message || 'Đã thêm Gemini API Key thành công.');
+                this.newKeyModules = {};
+                this.toast.success('Thành công', res?.message || 'Đã thêm Gemini API Key thành công và cập nhật appsettings.json.');
                 this.loadKeyStats();
                 this.cdr.detectChanges();
             },

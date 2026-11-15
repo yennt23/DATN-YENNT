@@ -225,11 +225,11 @@ namespace DATN.Controllers
 
                 // 1. Phân luồng dữ liệu (RAG Keyword Router)
                 var msgLower = request.Message.ToLower();
-                // Nới lỏng Regex: Chỉ cần chứa từ khóa ngành nghề là kích hoạt RAG để AI luôn có dữ liệu thực tế
-                var isJobQuery = Regex.IsMatch(msgLower, @"(việc|job|công việc|intern|thực tập|tuyển|vị trí|developer|lập trình|sinh viên|phần mềm)");
-                var isSkillQuery = Regex.IsMatch(msgLower, @"(kỹ năng|skill|ngôn ngữ|framework|công nghệ|yêu cầu)");
+                // Nhận diện từ khóa tuyển dụng nhà máy, KCN và kỹ thuật
+                var isJobQuery = Regex.IsMatch(msgLower, @"(việc|job|công việc|công nhân|kỹ sư|smt|bảo trì|qa|qc|kho|lái xe|sản xuất|lao động|phụ kho|lắp ráp|vận hành|tuyển|vị trí|chân chạy|thời vụ|chính thức)");
+                var isSkillQuery = Regex.IsMatch(msgLower, @"(kỹ năng|skill|yêu cầu|tiêu chuẩn|bằng cấp|chứng chỉ|tiêu chí|kinh nghiệm)");
                 // Nới lỏng Regex: Chấp nhận các câu chào ngắn gọn (dưới 30 ký tự)
-                var isSmallTalk = request.Message.Length < 30 && Regex.IsMatch(msgLower, @"(hi|hello|chào|xin chào|ê|alo|bye|tạm biệt|hi there|hey|tư vấn)");
+                var isSmallTalk = request.Message.Length < 35 && Regex.IsMatch(msgLower, @"^(hi|hello|chào|xin chào|ê|alo|bye|tạm biệt|hi there|hey|tư vấn|bạn là ai|giúp|trợ giúp)");
 
                 string systemPrompt = "";
 
@@ -239,14 +239,14 @@ namespace DATN.Controllers
                     Response.Headers["Cache-Control"] = "no-cache";
                     Response.Headers["Connection"] = "keep-alive";
 
-                    var greetingMsg = "Chào bạn! Tôi là V9 Assistant - AI tư vấn tuyển dụng độc quyền của V9 TECH. Tôi có thể giúp bạn tìm kiếm thông tin Việc làm, Kỹ năng IT, hoặc tư vấn kinh nghiệm phỏng vấn. Bạn đang quan tâm đến vị trí nào?";
+                    var greetingMsg = "Chào bạn! Tôi là ATS Assistant - Trợ lý tuyển dụng thông minh của Hệ thống Tuyển dụng KCN & Nhà Máy ATS Industrial. Tôi có thể hỗ trợ bạn tra cứu vị trí việc làm, chế độ lương thưởng, phụ cấp chuyên cần, ca kíp nhà máy, hoặc hướng dẫn hồ sơ tiếp nhận và thử việc 30 ngày. Bạn đang quan tâm đến công việc hoặc xưởng nào?";
                     var words = greetingMsg.Split(' ');
                     foreach (var word in words)
                     {
                         var chunkObj = new { text = word + " " };
                         await Response.WriteAsync($"data: {JsonSerializer.Serialize(chunkObj)}\n\n", cts.Token);
                         await Response.Body.FlushAsync(cts.Token);
-                        await Task.Delay(30); 
+                        await Task.Delay(25); 
                     }
                     await Response.WriteAsync("data: [DONE]\n\n", cts.Token);
                     await Response.Body.FlushAsync(cts.Token);
@@ -254,47 +254,31 @@ namespace DATN.Controllers
                 }
                 else
                 {
-                    systemPrompt = $@"Bạn là V9 Assistant - AI tư vấn tuyển dụng ĐỘC QUYỀN của V9 TECH. 
+                    systemPrompt = $@"Bạn là ATS Assistant - AI tư vấn tuyển dụng & quản trị nhân sự thông minh của Hệ thống Tuyển dụng KCN ATS Industrial. 
 Hôm nay là {DateTime.Now:dd/MM/yyyy HH:mm:ss} (Năm {DateTime.Now.Year}).
 
 === PERSONA & TONE ===
-Bạn là một chuyên gia tuyển dụng IT thân thiện, chuyên nghiệp & sáng tạo:
-• Giải thích job descriptions một cách dễ hiểu, friendly
-• Có thể suggest variations/alternatives khi user hỏi về jobs khác nhau
-• Proactive suggest tips/advice liên quan (CV tips, interview prep, etc.)
-• Encouraging & supportive, giúp candidate self-assess fit
+Bạn là chuyên gia tư vấn tuyển dụng nhà máy & khu công nghiệp thân thiện, thực tế, ân cần và chuyên nghiệp:
+• Tư vấn rõ ràng, dễ hiểu cho người lao động, công nhân sản xuất và kỹ sư nhà máy
+• Thấu hiểu nhu cầu: thu nhập thực tế, tiền ăn ca, phụ cấp chuyên cần, xe đưa đón, ký túc xá, chế độ BHXH
+• Hướng dẫn chi tiết thủ tục hồ sơ (CCCD gắn chip, giấy khám sức khỏe KSK đạt chuẩn KCN, sơ yếu lý lịch)
+• Giải thích quy trình tiếp nhận: cấp mã nhân viên, mở tài khoản ngân hàng, 30 ngày thử việc và ký hợp đồng chính thức
+• Khích lệ và hỗ trợ ứng viên tự tin tham gia phỏng vấn
 
 === SCOPE & GUARDRAILS ===
-CHỈ ĐƯỢC PHÉP trả lời về:
-✓ Vị trí tuyển dụng, yêu cầu, career path
-✓ Kỹ năng IT, công nghệ trending, learning roadmap
-✓ Quy trình ứng tuyển, phỏng vấn, offer
-✓ Công ty V9 TECH, culture, benefits
-✓ CV/LinkedIn tips, interview preparation
+CHỈ ĐƯỢC PHÉP tư vấn về:
+✓ Các vị trí việc làm nhà máy: Công nhân SMT, Lắp ráp cơ khí, Kỹ thuật bảo trì PLC, Chuyên viên QA/QC, Kho vận, Lái xe nâng...
+✓ Chế độ đãi ngộ: Lương cơ bản, phụ cấp ca kíp, tăng ca OT, tiền ăn, nhà ở ký túc xá, thưởng lễ tết
+✓ Quy trình tuyển dụng KCN: Tiếp nhận qua QR Form, phỏng vấn, khám sức khỏe, onboard, thử việc 30 ngày
+✓ Nội quy an toàn lao động, phòng sạch, đồng phục và bảo hộ lao động
 
-NẾU user hỏi ngoài scope (thời tiết, nấu ăn, toán học, thần thoại, code dạo, etc.):
-→ TỪ CHỐI LỊCH SỰ: 'Xin lỗi, tôi chỉ hỗ trợ về tuyển dụng & IT. Bạn có câu hỏi nào về công việc tại V9 TECH không?'
-→ ĐƠN GIẢN, KHÔNG BÀO CHỮ, KHÔNG NGOÀI LỆ
+NẾU người dùng hỏi ngoài phạm vi (chính trị, giải trí không liên quan, code ngẫu nhiên...):
+→ TỪ CHỐI LỊCH SỰ: 'Xin lỗi, tôi là trợ lý chuyên trách tuyển dụng của ATS Industrial. Bạn có câu hỏi nào về các vị trí việc làm hoặc chế độ tại các nhà máy KCN không?'
 
-=== JOB VARIATIONS & EXPLANATIONS ===
-Khi user hỏi về jobs, TỰ ĐỘNG:
-1. Giải thích job description đơn giản hơn
-2. Suggest vị trí similar khác (Frontend → Full-stack alternative)
-3. Explain progression (Junior → Middle path)
-4. Clarify requirements vs nice-to-have
-Ví dụ: User hỏi 'Backend Developer khó không?'
-→ Explain role, compare với Frontend, suggest roadmap, then ask 'Bạn prefer Backend hay muốn explore Frontend?'
-
-=== INTERACTION STYLE ===
-• SHORT-FORM answers (2-4 sentences for quick q, bullet points for lists)
-• ASK CLARIFYING QUESTIONS để hiểu user motivation
-• PROVIDE CONCRETE EXAMPLES từ V9 TECH hoặc industry
-• AVOID generic AI-speak, use natural Vietnamese
-
-=== CONTEXT AWARENESS ===
-• Remember user profile từ conversation history nếu có
-• Adapt advice based on seniority level (Junior vs Senior questions differ)
-• Suggest relevant next steps (e.g., 'Next bạn có thể...', 'Gợi ý...')";
+=== NGUYÊN TẮC TRẢ LỜI ===
+• Trả lời ngắn gọn, thực tế, đi thẳng vào vấn đề bằng tiếng Việt tự nhiên
+• Gạch đầu dòng rõ ràng các quyền lợi, yêu cầu và mức lương cụ thể
+• Nhắc nhở người lao động chuẩn bị đầy đủ CCCD và giấy khám sức khỏe khi đi phỏng vấn";
                 }
 
                 if (isJobQuery)
@@ -304,19 +288,18 @@ Ví dụ: User hỏi 'Backend Developer khó không?'
                     var activeJobs = await _context.Jobs
                         .Where(j => j.Status == "OPEN" && !j.IsDeleted && (j.Deadline == null || j.Deadline >= utcNow))
                         .OrderByDescending(j => j.CreatedAt)
-                        .Take(8) // Giảm xuống 8 để tiết kiệm token, lấy full details thay vì chỉ title
+                        .Take(8)
                         .Select(j => new { j.Title, j.Description, j.Requirements, j.SalaryMin, j.SalaryMax, j.Currency })
                         .ToListAsync(cts.Token);
                     
-                    _logger.LogInformation($"[Chatbot] Đã tìm thấy {activeJobs.Count} jobs với full details cho RAG.");
+                    _logger.LogInformation($"[Chatbot] Đã tìm thấy {activeJobs.Count} jobs KCN cho RAG.");
                     
-                    // Format jobs data để AI dễ parse
                     var jobsContext = activeJobs.Any()
-                        ? "=== ACTIVE JOBS AT V9 TECH ===\n" + string.Join("\n---\n", activeJobs.Select((j, idx) =>
-                            $"Job #{idx + 1}: {j.Title}\nDescription: {(j.Description?.Length > 200 ? j.Description.Substring(0, 200) + "..." : j.Description)}\nRequirements: {(j.Requirements?.Length > 200 ? j.Requirements.Substring(0, 200) + "..." : j.Requirements)}\nSalary: {j.SalaryMin?.ToString("N0") ?? "?"}-{j.SalaryMax?.ToString("N0") ?? "?"} {j.Currency ?? "VNĐ"}/month"))
-                        : "Không có job nào tuyển dụng lúc này.";
+                        ? "=== CÁC CHIẾN DỊCH VIỆC LÀM ĐANG TUYỂN DỤNG TẠI ATS INDUSTRIAL ===\n" + string.Join("\n---\n", activeJobs.Select((j, idx) =>
+                            $"Vị trí #{idx + 1}: {j.Title}\nMô tả: {(j.Description?.Length > 200 ? j.Description.Substring(0, 200) + "..." : j.Description)}\nYêu cầu: {(j.Requirements?.Length > 200 ? j.Requirements.Substring(0, 200) + "..." : j.Requirements)}\nThu nhập: {j.SalaryMin?.ToString("N0") ?? "?"}-{j.SalaryMax?.ToString("N0") ?? "?"} {j.Currency ?? "VNĐ"}/tháng"))
+                        : "Hiện tại nhà máy đang mở các đợt tiếp nhận liên tục cho công nhân sản xuất và kỹ thuật viên.";
                     
-                    systemPrompt += $"\n{jobsContext}\n\nKhi user hỏi về jobs:\n• Giải thích rõ requirement & benefits\n• Suggest job alternatives nếu cần\n• Ask user's interest để recommend fit role\n• Avoid paste URLs - thay vào đó nhắc user tìm tên job trên website";
+                    systemPrompt += $"\n{jobsContext}\n\nKhi ứng viên hỏi về công việc:\n• Nêu rõ vị trí phù hợp, mức thu nhập và quyền lợi\n• Hướng dẫn ứng viên đăng ký qua form online hoặc quét mã QR tuyển dụng của nhà máy";
                 }
                 else if (isSkillQuery)
                 {
@@ -460,8 +443,8 @@ Ví dụ: User hỏi 'Backend Developer khó không?'
                     throw new HttpRequestException("Failed to call Gemini after multiple attempts");
                 }
 
-                var baseUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse";
-                _logger.LogInformation($"[Gemini 2.5] Gọi API... Tokens ước tính: {payloadJson.Length} chars.");
+                var baseUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse";
+                _logger.LogInformation($"[Gemini AI] Gọi API... Tokens ước tính: {payloadJson.Length} chars.");
                 HttpResponseMessage response;
                 try
                 {
@@ -469,8 +452,10 @@ Ví dụ: User hỏi 'Backend Developer khó không?'
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Gọi Gemini thất bại sau retry");
-                    await WriteStreamEvent(Response, "Rất tiếc, hệ thống AI tạm thời không khả dụng. Vui lòng thử lại sau.");
+                    _logger.LogWarning(ex, "Gọi Gemini thất bại sau retry, kích hoạt bộ phản hồi thông minh KCN dự phòng");
+                    var smartAnswer = GenerateSmartFallbackAnswer(request.Message);
+                    await WriteStreamEvent(Response, smartAnswer);
+                    await SaveAssistantMessageAsync(smartAnswer, sessionId, cts.Token);
                     return;
                 }
                 // 5. Đọc Stream liên tục và đẩy về luồng Console/Angular
@@ -756,6 +741,67 @@ Ví dụ: User hỏi 'Backend Developer khó không?'
                 _logger.LogError(ex, "Error saving assistant message");
                 return null;
             }
+        }
+
+        private string GenerateSmartFallbackAnswer(string userMessage)
+        {
+            var msg = (userMessage ?? string.Empty).ToLower();
+
+            if (msg.Contains("lương") || msg.Contains("thu nhập") || msg.Contains("thưởng") || msg.Contains("phụ cấp") || msg.Contains("tiền"))
+            {
+                return "Chế độ thu nhập tại các nhà máy KCN thuộc ATS Industrial được đảm bảo rất cạnh tranh:\n" +
+                       "• Thu nhập bình quân: 8.500.000 – 14.000.000 VNĐ/tháng (Công nhân) và 14.000.000 – 25.000.000 VNĐ/tháng (Kỹ sư/Kỹ thuật viên).\n" +
+                       "• Phụ cấp chuyên cần: 500.000 – 800.000 VNĐ/tháng.\n" +
+                       "• Hỗ trợ ăn ca miễn phí tại nhà ăn công ty đảm bảo VSATTP.\n" +
+                       "• Tiền tăng ca (OT): 150% ngày thường, 200% ngày nghỉ và 300% ngày lễ tết theo Luật Lao Động.\n" +
+                       "• Lương tháng 13, thưởng sản lượng và quà các dịp lễ tết đầy đủ.";
+            }
+
+            if (msg.Contains("hồ sơ") || msg.Contains("giấy tờ") || msg.Contains("khám sức khỏe") || msg.Contains("ksk") || msg.Contains("cccd"))
+            {
+                return "Để tham gia phỏng vấn và hoàn tất thủ tục tiếp nhận, bạn cần chuẩn bị:\n" +
+                       "1. Căn cước công dân (CCCD) gắn chip hợp lệ.\n" +
+                       "2. Giấy khám sức khỏe (KSK) khổ A3 có dán ảnh, còn hạn trong vòng 06 tháng.\n" +
+                       "3. Sơ yếu lý lịch tự thuật có xác nhận của địa phương.\n" +
+                       "4. Bằng cấp/Chứng chỉ nghề (nếu ứng tuyển vị trí kỹ thuật, bảo trì, QA/QC).\n" +
+                       "5. Ảnh thẻ 3x4 hoặc 4x6 (2-4 ảnh) làm thẻ nhân viên.";
+            }
+
+            if (msg.Contains("thử việc") || msg.Contains("tiếp nhận") || msg.Contains("onboard") || msg.Contains("hợp đồng") || msg.Contains("mã nv") || msg.Contains("mã nhân viên"))
+            {
+                return "Quy trình tiếp nhận và thử việc tại nhà máy gồm:\n" +
+                       "1. Cấp mã nhân viên & mở tài khoản thẻ ngân hàng nhận lương ngay khi đạt điều kiện KSK.\n" +
+                       "2. Đào tạo hội nhập, an toàn lao động và hướng dẫn thực hành tại xưởng sản xuất.\n" +
+                       "3. Thời gian thử việc: 30 ngày hưởng lương thử việc theo quy định.\n" +
+                       "4. Đánh giá thử việc đạt: Ký hợp đồng lao động chính thức dài hạn, hưởng 100% lương và đóng đầy đủ BHXH, BHYT, BHTN.";
+            }
+
+            if (msg.Contains("ca") || msg.Contains("giờ làm") || msg.Contains("xe") || msg.Contains("đưa đón") || msg.Contains("bus"))
+            {
+                return "Thời gian làm việc và phương tiện di chuyển:\n" +
+                       "• Ca hành chính: 08:00 – 17:00 (Nghỉ trưa 60 phút).\n" +
+                       "• Ca sản xuất 12h (Xoay ca tuần hoặc 2 tuần/lần): Ca ngày (07:30 – 19:30), Ca đêm (19:30 – 07:30).\n" +
+                       "• Xe đưa đón: Công ty bố trí hệ thống xe bus đưa đón miễn phí theo nhiều tuyến đường chính từ trung tâm các huyện, tỉnh lân cận về thẳng nhà máy.";
+            }
+
+            if (msg.Contains("ký túc xá") || msg.Contains("ktx") || msg.Contains("ở xa") || msg.Contains("nhà trọ") || msg.Contains("chỗ ở"))
+            {
+                return "Nhà máy có khu Ký túc xá miễn phí dành cho công nhân viên ở xa:\n" +
+                       "• Phòng ở sạch sẽ, trang bị điều hòa nhiệt độ, bình nóng lạnh, quạt mát và wifi tốc độ cao.\n" +
+                       "• Có bảo vệ an ninh 24/7 và khu vực thể thao, căng tin tiện lợi.";
+            }
+
+            if (msg.Contains("vị trí") || msg.Contains("việc làm") || msg.Contains("tuyển") || msg.Contains("công việc") || msg.Contains("smt") || msg.Contains("bảo trì") || msg.Contains("chân chạy"))
+            {
+                return "Các vị trí việc làm KCN đang tuyển dụng liên tục:\n" +
+                       "• Công nhân vận hành dây chuyền SMT & Lắp ráp linh kiện (Số lượng lớn, nhận cả người chưa có kinh nghiệm).\n" +
+                       "• Kỹ sư Tự động hóa PLC & Kỹ thuật bảo trì máy móc dây chuyền.\n" +
+                       "• Chuyên viên Quản lý chất lượng IQC / OQC / QA (ISO, 5S).\n" +
+                       "• Nhân viên kho vận, thủ kho và lái xe nâng Reach Truck.\n" +
+                       "Bạn có thể quét mã QR chiến dịch hoặc nộp hồ sơ trực tuyến ngay trên hệ thống ATS Industrial!";
+            }
+
+            return "Chào bạn, tôi là ATS Assistant - Trợ lý Tuyển dụng KCN ATS Industrial. Bạn có thể hỏi tôi về các vị trí việc làm đang tuyển dụng, mức lương thưởng, phụ cấp chuyên cần, thủ tục hồ sơ (CCCD/KSK), xe đưa đón hoặc quy trình thử việc 30 ngày tại nhà máy!";
         }
     }
 

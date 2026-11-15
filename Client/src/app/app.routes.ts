@@ -157,7 +157,7 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/hr/onboarding/onboarding-management.component').then(m => m.OnboardingManagementComponent),
         canActivate: [roleAccessGuard]
       },
-      // Kho nhân tài (Talent Pool) - đổi từ /candidates
+      // Kho nhân tài (Talent Pool) - Quản lý kho hồ sơ ứng viên tiềm năng & bảo lưu
       {
         path: 'talent-pool',
         loadComponent: () => import('./pages/admin/candidate-management/candidate-management').then(m => m.CandidateManagementComponent),

@@ -345,17 +345,36 @@ public class InterviewService : IInterviewService
             {
                 string newStatus = dto.Result switch
                 {
-                    "Passed" => "Pending_Offer",     // ✅ Fixed naming
+                    "Passed" => "PASSED",
                     "Failed" => "Rejected",
-                    "Consider" => "Waitlist",        // ✅ Added Consider handling
+                    "Consider" => "Waitlisted",
                     _ => application.Status
                 };
 
+                application.InterviewScore = dto.Score;
+
                 if (application.Status != newStatus)
                 {
-                    var oldStatus = application.Status; // Capture old status before update
+                    var oldStatus = application.Status;
                     application.Status = newStatus;
-                    application.LastStageChangedAt = DateTime.UtcNow;  // ✅ Update timestamp
+                    application.LastStageChangedAt = DateTime.UtcNow;
+
+                    var targetStageCode = dto.Result == "Passed" ? "PASSED" : dto.Result == "Failed" ? "REJECTED" : null;
+                    if (targetStageCode != null)
+                    {
+                        var targetStage = await _context.PipelineStages.FirstOrDefaultAsync(s => s.Code == targetStageCode);
+                        if (targetStage != null)
+                        {
+                            application.CurrentStageId = targetStage.StageId;
+                        }
+                    }
+
+                    if (dto.Result == "Passed" && application.ApplicationSource == "PDF_UPLOAD" &&
+                        (string.IsNullOrEmpty(application.OfferStatus) || application.OfferStatus == "Not_Required"))
+                    {
+                        application.OfferStatus = "Offer_Pending";
+                    }
+
                     _logger.LogInformation("✅ Updated Application {AppId}: {OldStatus} → {NewStatus}", 
                         application.ApplicationId, oldStatus, newStatus);
                 }

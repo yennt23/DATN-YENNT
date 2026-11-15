@@ -1,8 +1,10 @@
 import { CommonModule } from '@angular/common';
 import { Component, Inject, PLATFORM_ID, OnInit, OnDestroy, inject, computed, signal } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import { RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
+import { HttpClient } from '@angular/common/http';
+import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { filter } from 'rxjs/operators';
 import { NotificationService, NotificationDto } from '../../services/notification.service';
 import { ToastComponent } from '../../components/toast/toast.component';
 import { ToastService } from '../../services/toast.service';
@@ -19,6 +21,7 @@ import { CurrentUser } from '../../models/auth.model';
 })
 export class HrLayout implements OnInit, OnDestroy {
   public authService = inject(AuthService);
+  private http = inject(HttpClient);
   private notificationService = inject(NotificationService);
   private toastService = inject(ToastService);
   private router = inject(Router);
@@ -30,9 +33,9 @@ export class HrLayout implements OnInit, OnDestroy {
   private pollingInterval: any;
 
   // Dynamic Badges Signals
-  openJobsCount = signal<number>(14);
-  pendingApplicationsCount = signal<number>(8);
-  todayInterviewsCount = signal<number>(3);
+  openJobsCount = signal<number>(4);
+  pendingApplicationsCount = signal<number>(0);
+  todayInterviewsCount = signal<number>(0);
 
   // Dev Role Switcher
   devAccounts = DEV_ACCOUNTS;
@@ -80,13 +83,49 @@ export class HrLayout implements OnInit, OnDestroy {
   ngOnInit(): void {
     setTimeout(() => {
       this.loadNotifications();
+      this.refreshMenuBadgeCounts();
     });
+
+    this.router.events
+      .pipe(filter(e => e instanceof NavigationEnd))
+      .subscribe(() => {
+        this.refreshMenuBadgeCounts();
+      });
 
     if (isPlatformBrowser(this.platformId)) {
       this.pollingInterval = setInterval(() => {
         this.loadNotifications();
-      }, 15000);
+        this.refreshMenuBadgeCounts();
+      }, 10000);
     }
+  }
+
+  refreshMenuBadgeCounts(): void {
+    this.http.get<any>('/api/applications').subscribe({
+      next: (res) => {
+        const list: any[] = res?.data || (Array.isArray(res) ? res : []);
+        const activeCount = list.filter(a => {
+          const st = (a.status || 'PENDING').toUpperCase();
+          return (
+            !a.isInTalentPool &&
+            st !== 'SAVED_IN_TALENT_POOL' &&
+            st !== 'REJECTED' &&
+            st !== 'REJECTED_BLACKLISTED' &&
+            st !== 'PASSED' &&
+            st !== 'INTERVIEWPASSED' &&
+            st !== 'HIRED' &&
+            !a.convertedEmployeeCode
+          );
+        }).length;
+        const interviewCount = list.filter(a => {
+          const st = (a.status || '').toUpperCase();
+          return st === 'INTERVIEW' || st === 'SCHEDULEDINTERVIEW' || st === 'INTERVIEW_SCHEDULED';
+        }).length;
+        this.pendingApplicationsCount.set(activeCount);
+        this.todayInterviewsCount.set(interviewCount);
+      },
+      error: () => {}
+    });
   }
 
   ngOnDestroy(): void {

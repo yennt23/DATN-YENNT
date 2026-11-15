@@ -28,7 +28,7 @@ public sealed class GeminiCvScreeningService
 
     private const int BatchSize = 5;
     private const int MaxRetryPerBatch = 3;
-    private const string GeminiModel = "gemini-2.5-flash";
+    private const string GeminiModel = "gemini-1.5-flash";
     private const string GeminiApiBase =
         "https://generativelanguage.googleapis.com/v1beta/models/{0}:generateContent?key={1}";
 

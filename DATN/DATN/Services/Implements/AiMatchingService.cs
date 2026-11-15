@@ -121,7 +121,7 @@ public class AiMatchingService : IAiMatchingService
             var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
             // Gọi Gemini API - Sử dụng Gemini 2.5 Flash
-            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
             var response = await _httpClient.PostAsync(apiUrl, content);
 
             if (!response.IsSuccessStatusCode)
@@ -383,7 +383,7 @@ Yêu cầu:
             var jsonContent = System.Text.Json.JsonSerializer.Serialize(requestBody);
             var content = new StringContent(jsonContent, System.Text.Encoding.UTF8, "application/json");
 
-            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
             var response = await _httpClient.PostAsync(apiUrl, content);
 
             if (!response.IsSuccessStatusCode)
@@ -538,7 +538,7 @@ Chỉ trả về đoạn văn đó (2-3 câu), không viết tiêu đề hay k�
             var jsonContent = JsonSerializer.Serialize(requestBody);
             var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
-            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
             var response = await _httpClient.PostAsync(apiUrl, content);
 
             if (!response.IsSuccessStatusCode)
@@ -632,7 +632,7 @@ KHÔNG thêm markdown code blocks.
             var jsonContent = JsonSerializer.Serialize(requestBody);
             var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
-            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
             var response = await _httpClient.PostAsync(apiUrl, content);
 
             if (!response.IsSuccessStatusCode)
@@ -725,7 +725,7 @@ Trả về kết quả dưới dạng JSON với cấu trúc sau (KHÔNG thêm m
             var jsonContent = JsonSerializer.Serialize(requestBody);
             var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
-            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
             var response = await _httpClient.PostAsync(apiUrl, content);
 
             if (!response.IsSuccessStatusCode)

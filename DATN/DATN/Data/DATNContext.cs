@@ -328,7 +328,7 @@ public partial class DATNContext : DbContext
             entity.Property(e => e.InterviewRescheduleCount).HasDefaultValue(0);
             entity.Property(e => e.IsInTalentPool).HasDefaultValue(false);
             entity.Property(e => e.Probation30DayStatus).HasMaxLength(30).HasDefaultValue("Not_Started");
-            entity.Property(e => e.RowVersion).IsRowVersion().IsConcurrencyToken();
+            entity.Ignore(e => e.RowVersion);
 
             entity.HasOne(d => d.Candidate).WithMany(p => p.Applications)
                 .HasForeignKey(d => d.CandidateId)

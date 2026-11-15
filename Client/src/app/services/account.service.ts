@@ -46,14 +46,27 @@ export interface NotificationSettingDto {
 }
 
 export interface CandidateDto {
+    candidateId?: string;
     userId: string;
+    applicationId?: string;
     email: string;
     fullName: string;
     phone: string;
+    location?: string;
     avatarUrl: string;
     isActive: boolean;
     authProvider: string;
     createdAt: string;
+    jobId?: string;
+    jobTitle?: string;
+    departmentName?: string;
+    aiMatchingScore?: number;
+    skills?: string[];
+    isInTalentPool?: boolean;
+    status?: string;
+    statusDisplay?: string;
+    cvUrl?: string;
+    isExEmployeeRehire?: boolean;
     lockedAt?: string;
     lockedByName?: string;
     lockReason?: string;

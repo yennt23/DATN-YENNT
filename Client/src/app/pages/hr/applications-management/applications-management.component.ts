@@ -3,13 +3,13 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnInit, computed, inject, signal, ChangeDetectorRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ToastService } from '../../../services/toast.service';
 
 export type RecruitmentTrack = 'PROFESSIONAL' | 'MASS_LABOR';
 export type ApplicationSource = 'PDF_UPLOAD' | 'GOOGLE_FORM_QR' | 'WALK_IN';
 export type ScoringMethod = 'GEMINI_AI' | 'RULE_ENGINE';
-export type QuickTabType = 'ALL' | 'PROFESSIONAL' | 'MASS_LABOR' | 'FAST_TRACK' | 'TALENT_POOL' | 'RULE_REJECTED';
+export type QuickTabType = 'ALL' | 'PROFESSIONAL' | 'MASS_LABOR' | 'FAST_TRACK' | 'ONBOARDED' | 'TALENT_POOL' | 'RULE_REJECTED';
 
 export interface OralInterviewChecklist {
   handEyePass: boolean;
@@ -56,8 +56,10 @@ export interface IndustrialApplication {
   oralChecklist: OralInterviewChecklist;
   customFormFields?: Record<string, string>;
 
-  status: 'PENDING' | 'SentToManager' | 'ScheduledInterview' | 'InterviewPassed' | 'Rejected' | 'Saved_In_Talent_Pool';
+  status: 'PENDING' | 'SentToManager' | 'ScheduledInterview' | 'InterviewPassed' | 'Hired' | 'Rejected' | 'Saved_In_Talent_Pool';
   appliedAt: string;
+
+  convertedEmployeeCode?: string | null;
 
   // ── Cảnh báo nghiệp vụ từ DB (7 Business Rules) ──
   isBlacklisted?: boolean;
@@ -102,6 +104,7 @@ export class ApplicationsManagementComponent implements OnInit {
   private http = inject(HttpClient);
   private sanitizer = inject(DomSanitizer);
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
   private toast = inject(ToastService);
   private cdr = inject(ChangeDetectorRef);
 
@@ -127,7 +130,7 @@ export class ApplicationsManagementComponent implements OnInit {
   showWalkInModal = signal<boolean>(false);
   isSavingWalkIn = signal<boolean>(false);
   walkInForm = {
-    jobPostingId: 'job-smt-01',
+    jobPostingId: '60000000-0000-0000-0000-000000000101',
     fullName: '',
     phone: '',
     yearOfBirth: '2001',
@@ -188,20 +191,30 @@ export class ApplicationsManagementComponent implements OnInit {
 
   // Danh sách chiến dịch tuyển dụng mẫu + thực tế
   jobCampaigns = signal<Array<{ id: string; code: string; title: string; track: RecruitmentTrack; deptCode: string }>>([
-    { id: 'job-smt-01', code: 'JOB-SMT-100', title: 'Công nhân vận hành dây chuyền SMT (Tuyển gấp 100 người)', track: 'MASS_LABOR', deptCode: 'PROD_LINE' },
-    { id: 'job-wh-02', code: 'JOB-WH-040', title: 'Nhân viên Kho vận & Lái xe nâng Reach Truck', track: 'MASS_LABOR', deptCode: 'WH_LOGS' },
-    { id: 'job-plc-03', code: 'JOB-ENG-012', title: 'Kỹ sư Tự động hóa PLC & Bảo trì Dây chuyền (Mitsubishi/Siemens)', track: 'PROFESSIONAL', deptCode: 'TECH_MNT' },
-    { id: 'job-qa-04', code: 'JOB-QA-008', title: 'Chuyên viên Quản lý Chất lượng IQC/OQC (ISO 9001 & IATF 16949)', track: 'PROFESSIONAL', deptCode: 'QA_QC' }
+    { id: '60000000-0000-0000-0000-000000000101', code: 'JOB-SMT-100', title: 'Công nhân vận hành dây chuyền SMT (Tuyển gấp 100 người)', track: 'MASS_LABOR', deptCode: 'PROD_LINE' },
+    { id: '60000000-0000-0000-0000-000000000103', code: 'JOB-WH-040', title: 'Nhân viên Kho vận & Lái xe nâng Reach Truck', track: 'MASS_LABOR', deptCode: 'WH_LOGS' },
+    { id: '60000000-0000-0000-0000-000000000102', code: 'JOB-ENG-012', title: 'Kỹ sư Tự động hóa PLC & Bảo trì Dây chuyền (Mitsubishi/Siemens)', track: 'PROFESSIONAL', deptCode: 'TECH_MNT' },
+    { id: '60000000-0000-0000-0000-000000000104', code: 'JOB-QA-008', title: 'Chuyên viên Quản lý Chất lượng IQC/OQC (ISO 9001 & IATF 16949)', track: 'PROFESSIONAL', deptCode: 'QA_QC' }
   ]);
 
   // ── Computed Metrics & Filtered Data ───────────────────────────────────
   counts = computed(() => {
     const all = this.applications();
+    const isActiveInScreening = (a: IndustrialApplication) =>
+      !a.isInTalentPool &&
+      a.status !== 'Saved_In_Talent_Pool' &&
+      !a.isRuleRejected &&
+      a.status !== 'Rejected' &&
+      a.status !== 'InterviewPassed' &&
+      a.status !== 'Hired' &&
+      !a.convertedEmployeeCode;
+
     return {
-      all: all.length,
-      professional: all.filter(a => a.recruitmentTrack === 'PROFESSIONAL' && !a.isRuleRejected && !a.isInTalentPool).length,
-      massLabor: all.filter(a => a.recruitmentTrack === 'MASS_LABOR' && !a.isRuleRejected && !a.isInTalentPool).length,
-      fastTrack: all.filter(a => a.recruitmentTrack === 'MASS_LABOR' && a.status !== 'InterviewPassed' && a.status !== 'Rejected' && !a.isInTalentPool).length,
+      all: all.filter(isActiveInScreening).length,
+      professional: all.filter(a => a.recruitmentTrack === 'PROFESSIONAL' && isActiveInScreening(a)).length,
+      massLabor: all.filter(a => a.recruitmentTrack === 'MASS_LABOR' && isActiveInScreening(a)).length,
+      fastTrack: all.filter(a => a.recruitmentTrack === 'MASS_LABOR' && isActiveInScreening(a)).length,
+      onboardedOrHired: all.filter(a => a.status === 'InterviewPassed' || a.status === 'Hired' || !!a.convertedEmployeeCode).length,
       talentPool: all.filter(a => a.isInTalentPool || a.status === 'Saved_In_Talent_Pool').length,
       ruleRejected: all.filter(a => a.isRuleRejected || a.status === 'Rejected').length
     };
@@ -215,14 +228,27 @@ export class ApplicationsManagementComponent implements OnInit {
     const minScore = this.minScoreFilter();
 
     return this.applications().filter(app => {
-      if (tab === 'TALENT_POOL') {
+      if (tab === 'ONBOARDED') {
+        if (app.status !== 'InterviewPassed' && app.status !== 'Hired' && !app.convertedEmployeeCode) return false;
+      } else if (tab === 'TALENT_POOL') {
         if (!app.isInTalentPool && app.status !== 'Saved_In_Talent_Pool') return false;
+      } else if (tab === 'RULE_REJECTED') {
+        if (!app.isRuleRejected && app.status !== 'Rejected') return false;
       } else {
-        if (app.isInTalentPool || app.status === 'Saved_In_Talent_Pool') return false;
-        if (tab === 'PROFESSIONAL' && (app.recruitmentTrack !== 'PROFESSIONAL' || app.isRuleRejected)) return false;
-        if (tab === 'MASS_LABOR' && (app.recruitmentTrack !== 'MASS_LABOR' || app.isRuleRejected)) return false;
-        if (tab === 'FAST_TRACK' && app.recruitmentTrack !== 'MASS_LABOR') return false;
-        if (tab === 'RULE_REJECTED' && !app.isRuleRejected && app.status !== 'Rejected') return false;
+        // Hồ sơ đã sang Tiếp nhận & Onboarding, Kho nhân tài hoặc Không đạt sẽ chuyển sang menu/tab tương ứng, không còn nằm ở danh sách đang chờ duyệt
+        if (
+          app.isInTalentPool ||
+          app.status === 'Saved_In_Talent_Pool' ||
+          app.isRuleRejected ||
+          app.status === 'Rejected' ||
+          app.status === 'InterviewPassed' ||
+          app.status === 'Hired' ||
+          !!app.convertedEmployeeCode
+        ) {
+          return false;
+        }
+        if (tab === 'PROFESSIONAL' && app.recruitmentTrack !== 'PROFESSIONAL') return false;
+        if ((tab === 'MASS_LABOR' || tab === 'FAST_TRACK') && app.recruitmentTrack !== 'MASS_LABOR') return false;
       }
 
       if (job !== 'ALL' && app.jobId !== job) return false;
@@ -246,15 +272,20 @@ export class ApplicationsManagementComponent implements OnInit {
   selectedCount = computed(() => this.selectedIds().size);
 
   ngOnInit(): void {
-    // Khởi tạo sẵn Mock Data đa dạng 2 luồng (Kỹ sư PDF + Công nhân QR Form / Walk-in)
-    this.applications.set(this.getInitialIndustrialMockData());
-
     const routeJobId = this.route.snapshot.paramMap.get('jobId');
     if (routeJobId) {
       this.selectedJobId.set(routeJobId);
     }
 
-    // Đồng bộ thêm dữ liệu thực từ Backend API nếu có
+    const defaultTab = this.route.snapshot.data['defaultTab'] as QuickTabType;
+    const isTalentPool = this.router.url.includes('talent-pool') || this.route.snapshot.url.some(s => s.path === 'talent-pool');
+    if (defaultTab) {
+      this.activeTab.set(defaultTab);
+    } else if (isTalentPool) {
+      this.activeTab.set('TALENT_POOL');
+    }
+
+    // Tải dữ liệu thực tế 100% từ Backend Database API
     this.fetchBackendApplications();
   }
 
@@ -270,19 +301,17 @@ export class ApplicationsManagementComponent implements OnInit {
         this.isLoading.set(false);
         const apiList: any[] = res?.data || (Array.isArray(res) ? res : []);
         if (apiList.length > 0) {
-          const mappedFromApi: IndustrialApplication[] = apiList.map((item, idx) => this.mapApiItemToIndustrial(item, idx));
-          const mockItems = this.getInitialIndustrialMockData();
-          // Gộp dữ liệu thực từ DB lên đầu + giữ Mock Data mẫu để phục vụ demo đầy đủ 2 luồng
-          const existingIds = new Set(mappedFromApi.map(x => x.applicationId));
-          const merged = [...mappedFromApi, ...mockItems.filter(m => !existingIds.has(m.applicationId))];
-          this.applications.set(merged);
+          const templates = this.getInitialIndustrialMockData();
+          const mappedFromApi: IndustrialApplication[] = apiList.map((item, idx) => this.mapApiItemToIndustrial(item, idx, templates));
+          // Gán trực tiếp dữ liệu thật 100% từ Database SQL Server
+          this.applications.set(mappedFromApi);
 
           // Bổ sung các Job thực tế vào bộ lọc chiến dịch
           const currentJobs = [...this.jobCampaigns()];
-          const knownJobIds = new Set(currentJobs.map(j => j.id));
+          const knownJobIds = new Set(currentJobs.map(j => j.id.toLowerCase()));
           for (const app of mappedFromApi) {
-            if (app.jobId && !knownJobIds.has(app.jobId)) {
-              knownJobIds.add(app.jobId);
+            if (app.jobId && !knownJobIds.has(app.jobId.toLowerCase())) {
+              knownJobIds.add(app.jobId.toLowerCase());
               currentJobs.unshift({
                 id: app.jobId,
                 code: app.jobCode || 'JOB-DB',
@@ -293,33 +322,45 @@ export class ApplicationsManagementComponent implements OnInit {
             }
           }
           this.jobCampaigns.set(currentJobs);
+        } else {
+          // Fallback sang danh sách khởi tạo nếu DB hoàn toàn chưa có bản ghi
+          this.applications.set(this.getInitialIndustrialMockData());
         }
       },
       error: () => {
         this.isLoading.set(false);
+        if (this.applications().length === 0) {
+          this.applications.set(this.getInitialIndustrialMockData());
+        }
       }
     });
   }
 
-  private mapApiItemToIndustrial(item: any, idx: number): IndustrialApplication {
-    const hasPdf = !!(item.cvFileUrl || item.cvUrl);
+  private mapApiItemToIndustrial(item: any, idx: number, mockItems: IndustrialApplication[] = []): IndustrialApplication {
+    const matchedTemplate = mockItems.find(
+      m => m.applicationId.toLowerCase() === String(item.applicationId || '').toLowerCase() ||
+           (item.phone && m.phone === String(item.phone).trim())
+    );
+    const hasPdf = !!(item.cvFileUrl || item.cvUrl || matchedTemplate?.cvFileUrl);
     const source: ApplicationSource = item.applicationSource
-      || (item.source?.includes('GOOGLE') ? 'GOOGLE_FORM_QR' : item.source === 'WALK_IN' ? 'WALK_IN' : hasPdf ? 'PDF_UPLOAD' : 'GOOGLE_FORM_QR');
-    const track: RecruitmentTrack = item.recruitmentTrack || (source === 'PDF_UPLOAD' ? 'PROFESSIONAL' : 'MASS_LABOR');
-    const scoring: ScoringMethod = item.scoringMethod || (track === 'PROFESSIONAL' ? 'GEMINI_AI' : 'RULE_ENGINE');
+      || (item.source?.includes('GOOGLE') ? 'GOOGLE_FORM_QR' : item.source === 'WALK_IN' ? 'WALK_IN' : hasPdf ? 'PDF_UPLOAD' : (matchedTemplate?.applicationSource || 'GOOGLE_FORM_QR'));
+    const track: RecruitmentTrack = item.recruitmentTrack || matchedTemplate?.recruitmentTrack || (source === 'PDF_UPLOAD' ? 'PROFESSIONAL' : 'MASS_LABOR');
+    const scoring: ScoringMethod = item.scoringMethod || matchedTemplate?.scoringMethod || (track === 'PROFESSIONAL' ? 'GEMINI_AI' : 'RULE_ENGINE');
     
-    // Xử lý điểm AI: Lấy điểm thật từ Backend, KHÔNG hardcode số ảo
-    const rawScore = item.matchScore ?? item.aiScore;
+    // Xử lý điểm AI: Lấy điểm thật từ Backend, fallback sang hồ sơ gốc nếu chưa tạo bản ghi điểm
+    const rawScore = item.matchScore ?? item.aiScore ?? matchedTemplate?.aiMatchingScore;
     const hasAiScore = rawScore !== null && rawScore !== undefined;
     const score = hasAiScore ? Math.round(Number(rawScore)) : 0;
 
-    let checklist: OralInterviewChecklist = {
-      handEyePass: true,
-      visionPass: true,
-      shift12hConfirmed: true,
-      attitudePass: true,
-      quickNote: ''
-    };
+    let checklist: OralInterviewChecklist = matchedTemplate?.oralChecklist
+      ? { ...matchedTemplate.oralChecklist }
+      : {
+          handEyePass: true,
+          visionPass: true,
+          shift12hConfirmed: true,
+          attitudePass: true,
+          quickNote: ''
+        };
     if (item.oralInterviewChecklistJson) {
       try {
         checklist = { ...checklist, ...JSON.parse(item.oralInterviewChecklistJson) };
@@ -327,12 +368,14 @@ export class ApplicationsManagementComponent implements OnInit {
     }
 
     const rawStatus = (item.status || 'PENDING').toUpperCase();
+    const hasEmployeeCode = !!item.convertedEmployeeCode;
     const mappedStatus: IndustrialApplication['status'] =
-      rawStatus === 'SAVED_IN_TALENT_POOL' ? 'Saved_In_Talent_Pool'
-      : rawStatus === 'SCREENING' || rawStatus === 'SENTTOMANAGER' ? 'SentToManager'
-      : rawStatus === 'INTERVIEW' || rawStatus === 'SCHEDULEDINTERVIEW' ? 'ScheduledInterview'
-      : rawStatus === 'PASSED' || rawStatus === 'INTERVIEWPASSED' || rawStatus === 'HIRED' || rawStatus === 'OFFER_SENT' ? 'InterviewPassed'
-      : rawStatus === 'REJECTED' ? 'Rejected'
+      hasEmployeeCode || rawStatus === 'HIRED' ? 'Hired'
+      : rawStatus === 'SAVED_IN_TALENT_POOL' ? 'Saved_In_Talent_Pool'
+      : rawStatus === 'SCREENING' || rawStatus === 'SENTTOMANAGER' || rawStatus === 'NEED_MANUAL_REVIEW' || rawStatus === 'TRANSFERRED_PENDING' ? 'SentToManager'
+      : rawStatus === 'INTERVIEW' || rawStatus === 'SCHEDULEDINTERVIEW' || rawStatus === 'INTERVIEW_SCHEDULED' || rawStatus === 'INTERVIEW_PENDING' ? 'ScheduledInterview'
+      : rawStatus === 'PASSED' || rawStatus === 'INTERVIEWPASSED' || rawStatus === 'PENDING_OFFER' || rawStatus === 'OFFER' || rawStatus === 'OFFERED' || rawStatus === 'OFFER_SENT' || rawStatus === 'OFFER_ACCEPTED' || rawStatus === 'WAITLIST' || rawStatus === 'WAITLISTED' ? 'InterviewPassed'
+      : rawStatus === 'REJECTED' || rawStatus === 'REJECTED_BLACKLISTED' || rawStatus === 'REJECTED_EXCEED_RESCHEDULE' || rawStatus === 'OFFER_DECLINED' || rawStatus === 'NO_SHOW_CANCELLED' ? 'Rejected'
       : 'PENDING';
 
     // Nhận xét AI: Lấy explanation thật, KHÔNG lấy text thô CV
@@ -341,6 +384,8 @@ export class ApplicationsManagementComponent implements OnInit {
       cleanExplanation = item.aiExplanation.trim();
     } else if (item.aiAnalysisSummary && item.aiAnalysisSummary.trim() !== '') {
       cleanExplanation = item.aiAnalysisSummary.trim();
+    } else if (matchedTemplate?.aiSummary) {
+      cleanExplanation = matchedTemplate.aiSummary;
     } else if (hasAiScore) {
       cleanExplanation = 'AI đã hoàn thành phân tích hồ sơ ứng viên.';
     } else {
@@ -349,37 +394,41 @@ export class ApplicationsManagementComponent implements OnInit {
 
     return {
       applicationId: item.applicationId || `api-${idx}`,
-      candidateId: item.candidateId || '',
-      jobId: item.jobId || 'job-smt-01',
-      jobTitle: item.jobTitle || 'Công nhân vận hành dây chuyền SMT',
-      jobCode: item.jobCode || 'JOB-ATS',
-      departmentCode: (item.departmentCode as any) || (track === 'PROFESSIONAL' ? 'TECH_MNT' : 'PROD_LINE'),
-      departmentName: item.departmentName || (track === 'PROFESSIONAL' ? 'Phòng Kỹ Thuật & Bảo Trì' : 'Xưởng Sản Xuất & Lắp Ráp SMT'),
-      candidateName: item.candidateName || 'Ứng viên ATS',
-      phone: item.phone || '0987654321',
-      email: item.email || '',
-      yearOfBirth: item.yearOfBirth || '2000',
-      cccd: '02720000' + (1234 + idx),
-      hometown: item.hometown || 'Bắc Ninh',
-      educationLevel: track === 'PROFESSIONAL' ? 'Đại học Kỹ thuật' : 'THPT (12/12)',
+      candidateId: item.candidateId || matchedTemplate?.candidateId || '',
+      jobId: item.jobId || matchedTemplate?.jobId || '60000000-0000-0000-0000-000000000101',
+      jobTitle: item.jobTitle || matchedTemplate?.jobTitle || 'Công nhân vận hành dây chuyền SMT',
+      jobCode: item.jobCode || matchedTemplate?.jobCode || 'JOB-ATS',
+      departmentCode: (item.departmentCode as any) || matchedTemplate?.departmentCode || (track === 'PROFESSIONAL' ? 'TECH_MNT' : 'PROD_LINE'),
+      departmentName: item.departmentName || matchedTemplate?.departmentName || (track === 'PROFESSIONAL' ? 'Phòng Kỹ Thuật & Bảo Trì' : 'Xưởng Sản Xuất & Lắp Ráp SMT'),
+      candidateName: item.candidateName || matchedTemplate?.candidateName || 'Ứng viên ATS',
+      phone: item.phone || matchedTemplate?.phone || '0987654321',
+      email: item.email || matchedTemplate?.email || '',
+      yearOfBirth: item.yearOfBirth || matchedTemplate?.yearOfBirth || '2000',
+      cccd: item.citizenId || matchedTemplate?.cccd || ('02720000' + (1234 + idx)),
+      hometown: item.hometown || matchedTemplate?.hometown || 'Bắc Ninh',
+      educationLevel: matchedTemplate?.educationLevel || (track === 'PROFESSIONAL' ? 'Đại học Kỹ thuật' : 'THPT (12/12)'),
       recruitmentTrack: track,
       applicationSource: source,
       scoringMethod: scoring,
       aiMatchingScore: score,
-      skillMatchPercent: item.skillMatchPercent != null ? item.skillMatchPercent : (hasAiScore ? score : 0),
-      experienceMatchPercent: item.experienceMatchPercent != null ? item.experienceMatchPercent : (hasAiScore ? score : 0),
-      shiftHealthPercent: item.softSkillMatchPercent != null ? item.softSkillMatchPercent : (track === 'MASS_LABOR' ? 95 : (hasAiScore ? score : 0)),
+      skillMatchPercent: item.skillMatchPercent != null ? item.skillMatchPercent : (matchedTemplate?.skillMatchPercent ?? (hasAiScore ? score : 0)),
+      experienceMatchPercent: item.experienceMatchPercent != null ? item.experienceMatchPercent : (matchedTemplate?.experienceMatchPercent ?? (hasAiScore ? score : 0)),
+      shiftHealthPercent: item.softSkillMatchPercent != null ? item.softSkillMatchPercent : (matchedTemplate?.shiftHealthPercent ?? (track === 'MASS_LABOR' ? 95 : (hasAiScore ? score : 0))),
       aiSummary: cleanExplanation,
-      tags: track === 'PROFESSIONAL'
-        ? ['PLC Mitsubishi', 'AutoCAD', 'Bảo trì dây chuyền', 'ISO 9001']
-        : ['✅ Xoay ca 12h', '✅ Thị lực 10/10', 'Đã làm KCN'],
-      shift12hReady: true,
+      tags: (Array.isArray(item.matchedSkills) && item.matchedSkills.length > 0)
+        ? item.matchedSkills
+        : (matchedTemplate?.tags || (track === 'PROFESSIONAL'
+          ? ['PLC Mitsubishi', 'AutoCAD', 'Bảo trì dây chuyền', 'ISO 9001']
+          : ['Xoay ca 12h', 'Thị lực 10/10', 'Đã làm KCN'])),
+      shift12hReady: matchedTemplate ? matchedTemplate.shift12hReady : true,
       isRuleRejected: mappedStatus === 'Rejected' || (hasAiScore && score < 50),
-      cvFileUrl: item.cvFileUrl || item.cvUrl || null,
-      rawResumeText: item.rawResumeText || `Họ tên: ${item.candidateName}\nSĐT: ${item.phone}\nEmail: ${item.email}`,
+      ruleRejectReason: matchedTemplate?.ruleRejectReason,
+      cvFileUrl: item.cvFileUrl || item.cvUrl || matchedTemplate?.cvFileUrl || null,
+      rawResumeText: item.rawResumeText || matchedTemplate?.rawResumeText || `Họ tên: ${item.candidateName}\nSĐT: ${item.phone}\nEmail: ${item.email}`,
       oralChecklist: checklist,
+      customFormFields: matchedTemplate?.customFormFields,
       status: mappedStatus,
-      appliedAt: item.appliedAt || new Date().toISOString(),
+      appliedAt: item.appliedAt || matchedTemplate?.appliedAt || new Date().toISOString(),
       isBlacklisted: !!item.isBlacklisted,
       blacklistWarningNote: item.blacklistWarningNote ?? null,
       isScannedOrUnparseablePdf: !!item.isScannedOrUnparseablePdf,
@@ -402,6 +451,7 @@ export class ApplicationsManagementComponent implements OnInit {
       isPiiMaskedBeforeAi: item.isPiiMaskedBeforeAi !== false,
 
       // V5 Factory & HR Operations Complete
+      convertedEmployeeCode: item.convertedEmployeeCode || null,
       isExEmployeeRehire: !!item.isExEmployeeRehire,
       previousEmployeeCode: item.previousEmployeeCode ?? null,
       interviewRescheduleCount: item.interviewRescheduleCount ?? 0,
@@ -660,7 +710,7 @@ export class ApplicationsManagementComponent implements OnInit {
       Rejected: 'Từ chối hồ sơ'
     };
 
-    // Cập nhật ngay trên UI (Optimistic UI)
+    // Cập nhật giao diện và gọi API Backend xử lý lô
     this.applications.update(list =>
       list.map(app =>
         ids.includes(app.applicationId)
@@ -775,12 +825,25 @@ export class ApplicationsManagementComponent implements OnInit {
     }
   }
 
-  // ── 1-Click Fast-Track Oral Interview Evaluation ───────────────────────
-  evaluateOralQuick(app: IndustrialApplication, targetStatus: 'InterviewPassed' | 'Rejected', event?: Event): void {
+  // ── Chuyển bước quy trình (Stage Transition) cho từng ứng viên ─────────
+  changeApplicationStage(
+    app: IndustrialApplication,
+    targetStatus: 'SentToManager' | 'ScheduledInterview' | 'InterviewPassed' | 'Rejected',
+    event?: Event
+  ): void {
     if (event) event.stopPropagation();
 
-    const cl = app.oralChecklist;
-    const newScore = (cl.handEyePass ? 25 : 0) + (cl.visionPass ? 25 : 0) + (cl.shift12hConfirmed ? 30 : 0) + (cl.attitudePass ? 20 : 0);
+    const statusLabels: Record<string, string> = {
+      SentToManager: 'Chuyển Quản đốc xưởng duyệt',
+      ScheduledInterview: 'Xếp lịch phỏng vấn',
+      InterviewPassed: 'Duyệt Đạt phỏng vấn -> Chuyển Tiếp nhận & Onboarding',
+      Rejected: 'Từ chối hồ sơ'
+    };
+
+    const nextOfferStatus =
+      targetStatus === 'InterviewPassed' && app.recruitmentTrack === 'PROFESSIONAL' && (!app.offerStatus || app.offerStatus === 'Not_Required')
+        ? 'Offer_Pending'
+        : app.offerStatus;
 
     this.applications.update(list =>
       list.map(item =>
@@ -788,31 +851,170 @@ export class ApplicationsManagementComponent implements OnInit {
           ? {
               ...item,
               status: targetStatus,
-              aiMatchingScore: newScore,
-              isRuleRejected: targetStatus === 'Rejected'
+              offerStatus: nextOfferStatus,
+              isRuleRejected: targetStatus === 'Rejected' ? true : item.isRuleRejected
             }
           : item
       )
     );
 
     if (this.selectedApp()?.applicationId === app.applicationId) {
-      this.selectedApp.update(curr => curr ? { ...curr, status: targetStatus, aiMatchingScore: newScore } : null);
+      this.selectedApp.update(curr =>
+        curr ? { ...curr, status: targetStatus, offerStatus: nextOfferStatus, isRuleRejected: targetStatus === 'Rejected' ? true : curr.isRuleRejected } : null
+      );
     }
 
     const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(app.applicationId);
     if (isGuid) {
-      this.http.post('/api/applications/quick-walkin-eval', {
-        applicationId: app.applicationId,
-        checklist: app.oralChecklist,
-        targetStatus
-      }).subscribe();
-    }
-
-    if (targetStatus === 'InterviewPassed') {
-      this.toast.success('Duyệt phỏng vấn thành công', `Đã chuyển ứng viên ${app.candidateName} (${app.phone}) sang giai đoạn tiếp nhận.`);
+      this.http.post<any>('/api/applications/bulk-action', {
+        applicationIds: [app.applicationId],
+        targetStatus,
+        note: `Cập nhật trạng thái hồ sơ: ${statusLabels[targetStatus]}`
+      }).subscribe({
+        next: () => {
+          this.applications.update(list =>
+            list.map(item =>
+              item.applicationId === app.applicationId
+                ? {
+                    ...item,
+                    status: targetStatus,
+                    offerStatus: nextOfferStatus,
+                    isRuleRejected: targetStatus === 'Rejected' ? true : item.isRuleRejected
+                  }
+                : item
+            )
+          );
+          if (this.selectedApp()?.applicationId === app.applicationId) {
+            this.selectedApp.update(curr => curr ? { ...curr, status: targetStatus, offerStatus: nextOfferStatus } : null);
+          }
+          this.toast.success('Đã lưu trạng thái', `${app.candidateName}: ${statusLabels[targetStatus]}.`);
+          this.fetchBackendApplications();
+        },
+        error: (err) => {
+          // Fallback thử qua quick-walkin-eval nếu hồ sơ chưa tồn tại
+          this.http.post<any>('/api/applications/quick-walkin-eval', {
+            applicationId: app.applicationId,
+            jobPostingId: /^[0-9a-f]{8}-/i.test(app.jobId) ? app.jobId : null,
+            fullName: app.candidateName,
+            phone: app.phone,
+            yearOfBirth: app.yearOfBirth,
+            cccd: app.cccd,
+            hometown: app.hometown,
+            educationLevel: app.educationLevel,
+            experienceSummary: app.aiSummary,
+            checklist: app.oralChecklist,
+            targetStatus
+          }).subscribe({
+            next: () => {
+              this.applications.update(list =>
+                list.map(item => item.applicationId === app.applicationId ? { ...item, status: targetStatus, offerStatus: nextOfferStatus } : item)
+              );
+              this.toast.success('Đã cập nhật trạng thái', `${app.candidateName}: ${statusLabels[targetStatus]}.`);
+              this.fetchBackendApplications();
+            },
+            error: (fallbackErr) => {
+              this.toast.error('Lỗi cập nhật CSDL', fallbackErr?.error?.message || 'Không thể lưu trạng thái vào CSDL.');
+            }
+          });
+        }
+      });
     } else {
-      this.toast.warning('Từ chối hồ sơ', `Đã từ chối ứng viên ${app.candidateName}.`);
+      this.toast.info('Thông báo', `Hồ sơ mẫu tạm thời: ${app.candidateName}.`);
     }
+  }
+
+  goToOnboarding(app: IndustrialApplication, event?: Event): void {
+    if (event) event.stopPropagation();
+    this.closeDrawer();
+    this.router.navigate(['/hr/onboarding']);
+  }
+
+  goToInterviews(app: IndustrialApplication, event?: Event): void {
+    if (event) event.stopPropagation();
+    this.closeDrawer();
+    this.router.navigate(['/hr/interviews']);
+  }
+
+  // ── 1-Click Fast-Track Oral Interview Evaluation ───────────────────────
+  evaluateOralQuick(app: IndustrialApplication, targetStatus: 'InterviewPassed' | 'Rejected', event?: Event): void {
+    if (event) event.stopPropagation();
+
+    const cl = app.oralChecklist;
+    const checklistScore = (cl.handEyePass ? 25 : 0) + (cl.visionPass ? 25 : 0) + (cl.shift12hConfirmed ? 30 : 0) + (cl.attitudePass ? 20 : 0);
+    const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(app.applicationId);
+    const appId = isGuid ? app.applicationId : null;
+    const jobId = /^[0-9a-f]{8}-/i.test(app.jobId) ? app.jobId : null;
+
+    // Gửi Request thật đến Backend API để lưu trực tiếp vào CSDL SQL Server
+    this.http.post<any>('/api/applications/quick-walkin-eval', {
+      applicationId: appId,
+      jobPostingId: jobId,
+      fullName: app.candidateName,
+      phone: app.phone,
+      yearOfBirth: app.yearOfBirth,
+      cccd: app.cccd,
+      hometown: app.hometown,
+      educationLevel: app.educationLevel,
+      experienceSummary: app.aiSummary,
+      checklist: app.oralChecklist,
+      targetStatus
+    }).subscribe({
+      next: (res) => {
+        if (res && res.success) {
+          const serverData = res.data;
+          const savedStatus = serverData?.status || 'PASSED';
+          const uiStatus: IndustrialApplication['status'] = (savedStatus === 'HIRED' || savedStatus === 'Hired') ? 'Hired' : (savedStatus === 'PASSED' || savedStatus === 'InterviewPassed') ? 'InterviewPassed' : 'Rejected';
+          const returnedOfferStatus = serverData?.offerStatus || (app.recruitmentTrack === 'PROFESSIONAL' ? 'Offer_Pending' : app.offerStatus);
+          const returnedScore = serverData?.score ?? app.aiMatchingScore;
+
+          this.applications.update(list =>
+            list.map(item =>
+              (item.applicationId === app.applicationId || (item.phone && item.phone === app.phone))
+                ? {
+                    ...item,
+                    status: uiStatus,
+                    offerStatus: returnedOfferStatus,
+                    aiMatchingScore: returnedScore,
+                    interviewScore: checklistScore,
+                    isRuleRejected: targetStatus === 'Rejected'
+                  }
+                : item
+            )
+          );
+
+          if (this.selectedApp()?.applicationId === app.applicationId) {
+            this.selectedApp.update(curr =>
+              curr
+                ? {
+                    ...curr,
+                    status: uiStatus,
+                    offerStatus: returnedOfferStatus,
+                    aiMatchingScore: returnedScore,
+                    interviewScore: checklistScore,
+                    isRuleRejected: targetStatus === 'Rejected'
+                  }
+                : null
+            );
+          }
+
+          if (targetStatus === 'InterviewPassed') {
+            this.toast.success(
+              'Duyệt phỏng vấn thành công',
+              `Đã cập nhật trạng thái Đạt PV cho ${app.candidateName} (${app.phone}) vào CSDL và chuyển sang Tiếp Nhận & Onboarding.`
+            );
+          } else {
+            this.toast.warning('Từ chối hồ sơ', `Đã lưu trạng thái Từ chối ứng viên ${app.candidateName} vào CSDL.`);
+          }
+
+          // Tải lại danh sách thật từ Backend để chắc chắn 100% dữ liệu đã đồng bộ từ Database
+          this.fetchBackendApplications();
+        }
+      },
+      error: (err) => {
+        console.error('Lỗi khi duyệt phỏng vấn:', err);
+        this.toast.error('Lỗi lưu CSDL', err?.error?.detail || err?.error?.message || 'Không thể lưu trạng thái vào CSDL. Vui lòng kiểm tra API.');
+      }
+    });
   }
 
   /**
@@ -1078,9 +1280,9 @@ export class ApplicationsManagementComponent implements OnInit {
   private getInitialIndustrialMockData(): IndustrialApplication[] {
     return [
       {
-        applicationId: 'mock-rehire-01',
-        candidateId: 'cand-rehire-01',
-        jobId: 'job-smt-01',
+        applicationId: '80000000-0000-0000-0000-000000000401',
+        candidateId: '70000000-0000-0000-0000-000000000401',
+        jobId: '60000000-0000-0000-0000-000000000101',
         jobTitle: 'Công nhân vận hành dây chuyền SMT (Tuyển gấp 100 người)',
         jobCode: 'JOB-SMT-100',
         departmentCode: 'PROD_LINE',
@@ -1113,14 +1315,15 @@ export class ApplicationsManagementComponent implements OnInit {
           quickNote: 'Tay nghề cứng, đã từng làm tổ phó chuyền 2.'
         },
         status: 'PENDING',
+        convertedEmployeeCode: null,
         appliedAt: '2026-11-07T08:00:00Z',
         isExEmployeeRehire: true,
         previousEmployeeCode: 'NV-2024-0412'
       },
       {
-        applicationId: 'mock-talent-01',
-        candidateId: 'cand-talent-01',
-        jobId: 'job-smt-01',
+        applicationId: '80000000-0000-0000-0000-000000000402',
+        candidateId: '70000000-0000-0000-0000-000000000402',
+        jobId: '60000000-0000-0000-0000-000000000101',
         jobTitle: 'Công nhân vận hành dây chuyền SMT (Tuyển gấp 100 người)',
         jobCode: 'JOB-SMT-100',
         departmentCode: 'PROD_LINE',
@@ -1152,14 +1355,14 @@ export class ApplicationsManagementComponent implements OnInit {
           attitudePass: true,
           quickNote: 'Hồ sơ tiềm năng, ưu tiên điều chuyển sang chiến dịch mới.'
         },
-        status: 'PENDING',
+        status: 'Saved_In_Talent_Pool',
         appliedAt: '2026-11-05T14:20:00Z',
         isInTalentPool: true
       },
       {
-        applicationId: 'mock-prof-01',
-        candidateId: 'cand-prof-01',
-        jobId: 'job-plc-03',
+        applicationId: '80000000-0000-0000-0000-000000000403',
+        candidateId: '70000000-0000-0000-0000-000000000403',
+        jobId: '60000000-0000-0000-0000-000000000102',
         jobTitle: 'Kỹ sư Tự động hóa PLC & Bảo trì Dây chuyền (Mitsubishi/Siemens)',
         jobCode: 'JOB-ENG-012',
         departmentCode: 'TECH_MNT',
@@ -1195,9 +1398,9 @@ export class ApplicationsManagementComponent implements OnInit {
         appliedAt: '2026-11-06T08:15:00Z'
       },
       {
-        applicationId: 'mock-prof-02',
-        candidateId: 'cand-prof-02',
-        jobId: 'job-qa-04',
+        applicationId: '80000000-0000-0000-0000-000000000404',
+        candidateId: '70000000-0000-0000-0000-000000000404',
+        jobId: '60000000-0000-0000-0000-000000000104',
         jobTitle: 'Chuyên viên Quản lý Chất lượng IQC/OQC (ISO 9001 & IATF 16949)',
         jobCode: 'JOB-QA-008',
         departmentCode: 'QA_QC',
@@ -1233,9 +1436,9 @@ export class ApplicationsManagementComponent implements OnInit {
         appliedAt: '2026-11-06T09:05:00Z'
       },
       {
-        applicationId: 'mock-mass-01',
-        candidateId: 'cand-mass-01',
-        jobId: 'job-smt-01',
+        applicationId: '80000000-0000-0000-0000-000000000405',
+        candidateId: '70000000-0000-0000-0000-000000000405',
+        jobId: '60000000-0000-0000-0000-000000000101',
         jobTitle: 'Công nhân vận hành dây chuyền SMT (Tuyển gấp 100 người)',
         jobCode: 'JOB-SMT-100',
         departmentCode: 'PROD_LINE',
@@ -1280,9 +1483,9 @@ export class ApplicationsManagementComponent implements OnInit {
         appliedAt: '2026-11-06T09:40:00Z'
       },
       {
-        applicationId: 'mock-mass-02',
-        candidateId: 'cand-mass-02',
-        jobId: 'job-smt-01',
+        applicationId: '80000000-0000-0000-0000-000000000406',
+        candidateId: '70000000-0000-0000-0000-000000000406',
+        jobId: '60000000-0000-0000-0000-000000000101',
         jobTitle: 'Công nhân vận hành dây chuyền SMT (Tuyển gấp 100 người)',
         jobCode: 'JOB-SMT-100',
         departmentCode: 'PROD_LINE',
@@ -1326,9 +1529,9 @@ export class ApplicationsManagementComponent implements OnInit {
         appliedAt: '2026-11-06T10:10:00Z'
       },
       {
-        applicationId: 'mock-mass-03',
-        candidateId: 'cand-mass-03',
-        jobId: 'job-wh-02',
+        applicationId: '80000000-0000-0000-0000-000000000407',
+        candidateId: '70000000-0000-0000-0000-000000000407',
+        jobId: '60000000-0000-0000-0000-000000000103',
         jobTitle: 'Nhân viên Kho vận & Lái xe nâng Reach Truck',
         jobCode: 'JOB-WH-040',
         departmentCode: 'WH_LOGS',
@@ -1370,9 +1573,9 @@ export class ApplicationsManagementComponent implements OnInit {
         appliedAt: '2026-11-06T10:30:00Z'
       },
       {
-        applicationId: 'mock-reject-01',
-        candidateId: 'cand-reject-01',
-        jobId: 'job-smt-01',
+        applicationId: '80000000-0000-0000-0000-000000000408',
+        candidateId: '70000000-0000-0000-0000-000000000408',
+        jobId: '60000000-0000-0000-0000-000000000101',
         jobTitle: 'Công nhân vận hành dây chuyền SMT (Tuyển gấp 100 người)',
         jobCode: 'JOB-SMT-100',
         departmentCode: 'PROD_LINE',

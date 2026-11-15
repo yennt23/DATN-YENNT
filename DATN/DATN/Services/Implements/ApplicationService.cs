@@ -141,10 +141,10 @@ public class ApplicationService : IApplicationService
             CandidateId = a.CandidateId,
             Status = a.Status,
             AppliedAt = a.AppliedAt,
-            CvUrl = a.ResumeDocument.File.Url ?? "",
-            CandidateName = a.ContactName ?? a.Candidate.FullName,
-            Email = a.ContactEmail ?? a.Candidate.Email,
-            Phone = a.ContactPhone ?? a.Candidate.Phone,
+            CvUrl = a.CvFileUrl ?? (a.ResumeDocument != null && a.ResumeDocument.File != null ? a.ResumeDocument.File.Url : "") ?? "",
+            CandidateName = a.ContactName ?? (a.Candidate != null ? a.Candidate.FullName : "Ứng viên"),
+            Email = a.ContactEmail ?? (a.Candidate != null ? a.Candidate.Email : ""),
+            Phone = a.PhoneNormalized ?? a.ContactPhone ?? (a.Candidate != null ? a.Candidate.Phone : ""),
             MatchScore = a.ApplicationAiScores.OrderByDescending(x => x.CreatedAt).FirstOrDefault() != null 
                 ? (int?)a.ApplicationAiScores.OrderByDescending(x => x.CreatedAt).FirstOrDefault().MatchingScore 
                 : null,
@@ -676,7 +676,7 @@ public class ApplicationService : IApplicationService
                     explanation = aiResult.Explanation
                 }),
                 BreakdownJson  = breakdownJson,
-                Model          = "gemini-2.5-flash",
+                Model          = "gemini-1.5-flash",
                 CreatedAt      = DateTime.UtcNow
             };
 
@@ -778,8 +778,32 @@ public class ApplicationService : IApplicationService
         if (!stateCheck.IsValid)
             throw new InvalidOperationException(stateCheck.ErrorMessage);
 
-        application.Status = newStatus;
+        var normalizedStatus = newStatus.Trim() switch
+        {
+            "SentToManager" => "SCREENING",
+            "ScheduledInterview" => "INTERVIEW",
+            "InterviewPassed" => "PASSED",
+            "Rejected" => "REJECTED",
+            _ => newStatus.Trim()
+        };
+
+        application.Status = normalizedStatus;
         application.LastStageChangedAt = DateTime.UtcNow;
+
+        var targetStage = await _context.PipelineStages
+            .OrderBy(s => s.SortOrder)
+            .FirstOrDefaultAsync(s => s.Code == normalizedStatus.ToUpperInvariant() || s.Name.Contains(newStatus));
+        if (targetStage != null)
+        {
+            application.CurrentStageId = targetStage.StageId;
+        }
+
+        if (string.Equals(normalizedStatus, "PASSED", StringComparison.OrdinalIgnoreCase)
+            && application.ApplicationSource == "PDF_UPLOAD"
+            && (string.IsNullOrEmpty(application.OfferStatus) || application.OfferStatus == "Not_Required"))
+        {
+            application.OfferStatus = "Offer_Pending";
+        }
 
         // Xóa (đánh dấu đã đọc) các thông báo SLA cũ của hồ sơ này
         var slaNotifications = await _context.Notifications

@@ -216,7 +216,7 @@ public class AiScreeningService : IAiScreeningService
                 var jsonContent = JsonSerializer.Serialize(requestBody);
                 var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
-                var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+                var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
                 var response = await _httpClient.PostAsync(apiUrl, content);
 
                 if (response.IsSuccessStatusCode)
