@@ -24,20 +24,27 @@ export class Dashboard implements OnInit, OnDestroy {
   private slaRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private slaTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // AI Screening Performance Banner
-  aiPerformance = {
-    totalScreened: 1428,
-    avgMatchScore: 78.4,
-    savedHours: 356,
-    overdueHighMatchCount: 3
+  // AI Screening Performance Banner (Dữ liệu thực từ Database)
+  aiPerformance: {
+    totalScreened: number;
+    avgMatchScore: number;
+    savedHours: number;
+    overdueHighMatchCount: number;
+  } = {
+    totalScreened: 0,
+    avgMatchScore: 0,
+    savedHours: 0,
+    overdueHighMatchCount: 0
   };
 
-  // Danh sách hồ sơ điểm AI cao (>= 75%) bị quá hạn SLA > 48h
-  highScoreOverdueCandidates = [
-    { name: 'Nguyễn Văn Hùng', jobTitle: 'Kỹ sư Vận hành SMT', score: 88, overdueHours: 52, department: 'Xưởng Sản Xuất' },
-    { name: 'Lê Thị Thu Cúc', jobTitle: 'Chuyên viên QA/QC Nhà máy', score: 82, overdueHours: 64, department: 'Quản Lý Chất Lượng' },
-    { name: 'Phạm Đức Minh', jobTitle: 'Kỹ thuật viên Tự động hóa PLC', score: 79, overdueHours: 49, department: 'Phòng Kỹ Thuật' }
-  ];
+  // Danh sách hồ sơ điểm AI cao (>= 75%) bị quá hạn SLA > 48h thực tế từ DB
+  highScoreOverdueCandidates: Array<{
+    name: string;
+    jobTitle: string;
+    score: number;
+    overdueHours: number;
+    department: string;
+  }> = [];
 
   getDepartmentDisplayName(): string {
     const user = this.authService.currentUser();
@@ -181,12 +188,41 @@ export class Dashboard implements OnInit, OnDestroy {
   * Tải toàn bộ dữ liệu dashboard
    */
   loadAllDashboardData(): void {
+    this.loadAiPerformance();
     this.loadSummary();
     this.loadRecentActivity();
     this.loadLatestCandidates();
     this.loadWeeklyActivity();
     this.loadSlaBottleneck();
     this.loadSlaAlerts();
+  }
+
+  /**
+   * Tải dữ liệu thực tế về Hiệu suất Sàng lọc AI & Danh sách hồ sơ quá hạn SLA từ Database
+   */
+  loadAiPerformance(): void {
+    this.dashboardService.getAiPerformance().subscribe({
+      next: (res) => {
+        const data = res?.data || res;
+        if (data) {
+          this.aiPerformance = {
+            totalScreened: data.totalScreened || 0,
+            avgMatchScore: data.avgMatchScore || 0,
+            savedHours: data.savedHours || 0,
+            overdueHighMatchCount: data.overdueHighMatchCount || 0
+          };
+          this.highScoreOverdueCandidates = Array.isArray(data.highScoreOverdueCandidates)
+            ? data.highScoreOverdueCandidates
+            : [];
+          if (!this.isDestroyed) {
+            this.cdr.detectChanges();
+          }
+        }
+      },
+      error: (err) => {
+        console.error('Lỗi khi tải AI Performance từ database:', err);
+      }
+    });
   }
 
   /**

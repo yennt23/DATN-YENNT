@@ -226,7 +226,9 @@ export class ApplicationsManagementComponent implements OnInit {
   batchInterviewerId = signal<string>('');
   batchMaxCapacity = signal<number>(50);
   isSchedulingBatches = signal<boolean>(false);
+  isLoadingBatches = signal<boolean>(false);
 
+  // Danh sách ca phỏng vấn tập trung thực tế từ Database
   activeInterviewBatches = signal<Array<{
     id: number;
     batchCode: string;
@@ -235,10 +237,7 @@ export class ApplicationsManagementComponent implements OnInit {
     scheduledDate: string;
     currentCount: number;
     maxCapacity: number;
-  }>>([
-    { id: 1, batchCode: 'BATCH-SMT-2026-01', shiftSlot: 'MORNING_08_11', shiftName: 'Ca Sáng (08:00 - 11:30)', scheduledDate: 'Hôm nay', currentCount: 48, maxCapacity: 50 },
-    { id: 2, batchCode: 'BATCH-SMT-2026-02', shiftSlot: 'AFTERNOON_13_17', shiftName: 'Ca Chiều (13:30 - 17:00)', scheduledDate: 'Hôm nay', currentCount: 15, maxCapacity: 50 }
-  ]);
+  }>>([]);
 
   // Danh sách chiến dịch tuyển dụng mẫu + thực tế
   jobCampaigns = signal<Array<{ id: string; code: string; title: string; track: RecruitmentTrack; deptCode: string }>>([
@@ -817,22 +816,36 @@ export class ApplicationsManagementComponent implements OnInit {
     this.batchDateValidationError.set('');
 
     this.showBatchInterviewModal.set(true);
+    this.loadBatchesFromDb();
+  }
 
-    this.http.get<any[]>('/api/hr-operations/batches').subscribe({
-      next: (batches) => {
-        if (Array.isArray(batches) && batches.length > 0) {
-          this.activeInterviewBatches.set(batches.map(b => ({
-            id: b.id,
-            batchCode: b.batchCode,
-            shiftSlot: b.shiftSlot,
-            shiftName: b.shiftSlot === 'MORNING_08_11' ? 'Ca Sáng (08:00 - 11:30)' : 'Ca Chiều (13:30 - 17:00)',
-            scheduledDate: new Date(b.scheduledDate).toLocaleDateString('vi-VN'),
-            currentCount: b.currentCount,
-            maxCapacity: b.maxCapacity
-          })));
+  loadBatchesFromDb(): void {
+    this.isLoadingBatches.set(true);
+    this.http.get<any>('/api/hr-operations/batches').subscribe({
+      next: (res: any) => {
+        this.isLoadingBatches.set(false);
+        const list = Array.isArray(res) ? res : (res?.data || []);
+        if (Array.isArray(list)) {
+          this.activeInterviewBatches.set(list.map((b: any) => {
+            const dateObj = b.scheduledDate ? new Date(b.scheduledDate) : null;
+            const dateStr = dateObj && !isNaN(dateObj.getTime())
+              ? dateObj.toLocaleDateString('vi-VN')
+              : 'Hôm nay';
+            return {
+              id: b.id,
+              batchCode: b.batchCode || `BATCH-${b.id}`,
+              shiftSlot: b.shiftSlot,
+              shiftName: b.shiftName || (b.shiftSlot === 'MORNING_08_11' ? 'Ca Sáng (08:00 - 11:30)' : 'Ca Chiều (13:30 - 17:00)'),
+              scheduledDate: dateStr,
+              currentCount: b.currentCount ?? 0,
+              maxCapacity: b.maxCapacity ?? 50
+            };
+          }));
         }
       },
-      error: () => {}
+      error: () => {
+        this.isLoadingBatches.set(false);
+      }
     });
   }
 
@@ -872,6 +885,7 @@ export class ApplicationsManagementComponent implements OnInit {
           this.selectedIds.set(new Set());
           this.toast.success('Xếp ca & Gửi mail thành công', res?.message || `Đã chia tách và xếp ca cho ${ids.length} ứng viên kèm email thông báo!`);
           this.fetchBackendApplications();
+          this.loadBatchesFromDb();
         },
         error: (err) => {
           this.isSchedulingBatches.set(false);

@@ -93,6 +93,20 @@ export interface SlaDashboardDto {
     topStuckApplications: SlaStuckApplicationDto[];
 }
 
+export interface AiScreeningPerformanceDto {
+    totalScreened: number;
+    avgMatchScore: number;
+    savedHours: number;
+    overdueHighMatchCount: number;
+    highScoreOverdueCandidates: Array<{
+        name: string;
+        jobTitle: string;
+        score: number;
+        overdueHours: number;
+        department: string;
+    }>;
+}
+
 export interface ApiResponse<T> {
     success: boolean;
     data: T;
@@ -176,5 +190,12 @@ export class DashboardService {
      */
     getSlaAlerts(): Observable<DashboardActivityDto[]> {
         return this.http.get<DashboardActivityDto[]>(`${this.apiUrl}/sla-alerts`);
+    }
+
+    /**
+     * Lấy dữ liệu thực tế về Hiệu suất Sàng lọc AI & Danh sách hồ sơ quá hạn SLA
+     */
+    getAiPerformance(): Observable<ApiResponse<AiScreeningPerformanceDto>> {
+        return this.http.get<ApiResponse<AiScreeningPerformanceDto>>(`${this.apiUrl}/ai-performance`);
     }
 }

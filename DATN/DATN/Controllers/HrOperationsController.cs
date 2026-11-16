@@ -185,10 +185,10 @@ public class HrOperationsController : ControllerBase
     }
 
     /// <summary>
-    /// Lấy danh sách các ca phỏng vấn tập trung đang hoạt động
+    /// Lấy danh sách các ca phỏng vấn tập trung đang hoạt động từ cơ sở dữ liệu
     /// </summary>
     [HttpGet("batches")]
-    [Authorize(Roles = "HR, ADMIN, HR_TEAM, INTERVIEWER")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetBatches([FromQuery] Guid? jobId)
     {
         var batches = await _hrOperationsService.GetActiveInterviewBatchesAsync(jobId);

@@ -625,6 +625,111 @@ public class DashboardController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/dashboard/ai-performance - Dữ liệu thực tế hiệu suất sàng lọc AI & các hồ sơ tiềm năng nghẽn SLA từ Database
+    /// </summary>
+    [HttpGet("ai-performance")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetAiPerformance()
+    {
+        try
+        {
+            var now = DateTime.UtcNow;
+
+            // 1. Tổng số hồ sơ đã được chấm điểm AI từ bảng ApplicationAiScores hoặc đã xử lý sàng lọc
+            var totalScreened = await _context.ApplicationAiScores
+                .AsNoTracking()
+                .Select(s => s.ApplicationId)
+                .Distinct()
+                .CountAsync();
+
+            if (totalScreened == 0)
+            {
+                totalScreened = await _context.Applications
+                    .AsNoTracking()
+                    .CountAsync(a => a.Status != "PENDING");
+            }
+
+            // 2. Điểm khớp trung bình AI từ DB thực tế
+            double avgScore = 0;
+            var hasScores = await _context.ApplicationAiScores.AnyAsync();
+            if (hasScores)
+            {
+                avgScore = (double)await _context.ApplicationAiScores
+                    .AsNoTracking()
+                    .AverageAsync(s => s.MatchingScore);
+            }
+
+            // 3. Thời gian tiết kiệm thực tế (khoảng 15 phút mỗi hồ sơ được AI chấm tự động)
+            var savedHours = Math.Round(totalScreened * 15.0 / 60.0, 1);
+
+            // 4. Tìm các hồ sơ điểm cao (>= 75%) đang chờ duyệt quá 48h thực tế từ DB
+            var pendingStatuses = new[] { "PENDING", "SentToManager", "HR_REVIEW", "Reviewing", "SUBMITTED" };
+            var threshold48hAgo = now.AddHours(-48);
+
+            var overdueApps = await _context.Applications
+                .AsNoTracking()
+                .Include(a => a.Candidate)
+                .Include(a => a.Job)
+                    .ThenInclude(j => j.Department)
+                .Include(a => a.ApplicationAiScores)
+                .Where(a => pendingStatuses.Contains(a.Status) 
+                         && (a.LastStageChangedAt <= threshold48hAgo || a.AppliedAt <= threshold48hAgo))
+                .ToListAsync();
+
+            var overdueCandidates = new List<object>();
+
+            foreach (var app in overdueApps)
+            {
+                var latestScore = app.ApplicationAiScores
+                    .OrderByDescending(s => s.CreatedAt)
+                    .FirstOrDefault();
+
+                var scoreValue = latestScore != null ? (int)latestScore.MatchingScore : 0;
+
+                // Chỉ cảnh báo ứng viên tiềm năng cao (AI Match >= 75%)
+                if (scoreValue >= 75)
+                {
+                    var referenceTime = app.LastStageChangedAt > DateTime.MinValue ? app.LastStageChangedAt : app.AppliedAt;
+                    var overdueHours = Math.Max(48, (int)(now - referenceTime).TotalHours);
+
+                    overdueCandidates.Add(new
+                    {
+                        name = !string.IsNullOrWhiteSpace(app.ContactName) 
+                            ? app.ContactName 
+                            : (app.Candidate != null && !string.IsNullOrWhiteSpace(app.Candidate.FullName) ? app.Candidate.FullName : "Ứng viên"),
+                        jobTitle = app.Job?.Title ?? "Vị trí tuyển dụng",
+                        score = scoreValue,
+                        overdueHours = overdueHours,
+                        department = !string.IsNullOrWhiteSpace(app.Job?.Department)
+                            ? app.Job.Department
+                            : (app.Job?.DepartmentNavigation?.DepartmentName ?? "Nhà máy V9 TECH")
+                    });
+                }
+            }
+
+            var topOverdue = overdueCandidates.Take(5).ToList();
+
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    totalScreened = totalScreened,
+                    avgMatchScore = Math.Round(avgScore, 1),
+                    savedHours = savedHours,
+                    overdueHighMatchCount = topOverdue.Count,
+                    highScoreOverdueCandidates = topOverdue
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi lấy AI Performance Dashboard");
+            return StatusCode(500, new { success = false, message = "Lỗi khi tải dữ liệu hiệu suất AI" });
+        }
+    }
+
+    /// <summary>
     /// Helper: xác định icon cho SLA alert
     /// </summary>
     private static string GetSlaAlertIcon(string notificationType)

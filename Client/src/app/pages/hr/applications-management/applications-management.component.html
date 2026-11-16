@@ -1078,31 +1078,50 @@
         </div>
         }
 
-        <!-- Thanh tiến độ sức chứa của từng ca đang mở -->
+        <!-- Thanh tiến độ sức chứa của từng ca đang mở (Dữ liệu thực từ Database) -->
         <div>
-          <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-2">
-            Tình trạng ca phỏng vấn hiện tại:
-          </label>
+          <div class="flex items-center justify-between mb-2">
+            <label class="block font-semibold text-slate-700 dark:text-slate-300">
+              Tình trạng ca phỏng vấn hiện tại (Cơ sở dữ liệu):
+            </label>
+            @if (isLoadingBatches()) {
+              <span class="text-[11px] text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                <span class="animate-spin text-xs">⏳</span> Đang đồng bộ từ database...
+              </span>
+            }
+          </div>
+
           <div class="space-y-2">
-            @for (batch of activeInterviewBatches(); track batch.id) {
-            <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
-              <div class="flex items-center justify-between font-semibold text-slate-800 dark:text-slate-200">
-                <span class="inline-flex items-center gap-1.5 font-mono text-[11px]">
-                  {{ batch.batchCode }} — {{ batch.shiftName }} ({{ batch.scheduledDate }})
-                </span>
-                <span class="text-[11px]"
-                  [class]="batch.currentCount >= 45 ? 'text-amber-700 dark:text-amber-400 font-bold' : 'text-slate-600 dark:text-slate-400 font-semibold'">
-                  {{ batch.currentCount }}/{{ batch.maxCapacity }} chỗ
-                  {{ batch.currentCount >= 45 ? '(Gần đầy)' : '(Còn trống)' }}
-                </span>
+            @if (isLoadingBatches()) {
+              <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-center text-slate-500 text-xs">
+                <span>Đang tải danh sách ca phỏng vấn từ máy chủ...</span>
               </div>
-              <div class="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
-                <div class="h-full rounded-full transition-all duration-300"
-                  [style.width.%]="(batch.currentCount / batch.maxCapacity) * 100"
-                  [class]="batch.currentCount >= 45 ? 'bg-amber-500' : 'bg-emerald-500'">
+            } @else if (activeInterviewBatches().length === 0) {
+              <div class="p-3.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-center text-slate-500 text-xs">
+                <span>Chưa có ca phỏng vấn nào mở trong cơ sở dữ liệu. Nhấn <strong>"Xác nhận xếp ca"</strong> bên dưới để tạo ca phỏng vấn mới.</span>
+              </div>
+            } @else {
+              @for (batch of activeInterviewBatches(); track batch.id) {
+              <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 space-y-1.5 shadow-2xs">
+                <div class="flex items-center justify-between font-semibold text-slate-800 dark:text-slate-200">
+                  <span class="inline-flex items-center gap-1.5 font-mono text-[11px]">
+                    <span class="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold">#{{ batch.id }}</span>
+                    <strong>{{ batch.batchCode }}</strong> — {{ batch.shiftName }} ({{ batch.scheduledDate }})
+                  </span>
+                  <span class="text-[11px]"
+                    [class]="batch.currentCount >= batch.maxCapacity ? 'text-rose-600 dark:text-rose-400 font-bold' : (batch.currentCount >= 40 ? 'text-amber-700 dark:text-amber-400 font-bold' : 'text-slate-600 dark:text-slate-400 font-semibold')">
+                    {{ batch.currentCount }}/{{ batch.maxCapacity }} chỗ
+                    {{ batch.currentCount >= batch.maxCapacity ? '(Đầy)' : (batch.currentCount >= 40 ? '(Gần đầy)' : '(Còn trống)') }}
+                  </span>
+                </div>
+                <div class="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                  <div class="h-full rounded-full transition-all duration-300"
+                    [style.width.%]="batch.maxCapacity > 0 ? (batch.currentCount / batch.maxCapacity) * 100 : 0"
+                    [class]="batch.currentCount >= batch.maxCapacity ? 'bg-rose-500' : (batch.currentCount >= 40 ? 'bg-amber-500' : 'bg-emerald-500')">
+                  </div>
                 </div>
               </div>
-            </div>
+              }
             }
           </div>
         </div>
