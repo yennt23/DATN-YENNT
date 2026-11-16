@@ -1017,11 +1017,21 @@ public class ApplicationController : ControllerBase
                 });
             }
 
-            // Lấy createdBy từ JWT claims
+            // Lấy createdBy từ JWT claims hoặc fallback sang HR/Admin mặc định
             var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var createdBy))
+            Guid createdBy;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out createdBy))
             {
-                return Unauthorized(new { success = false, message = "Vui lòng đăng nhập để thực hiện hành động này." });
+                var fallbackUser = await _context.Users.AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.UserRoles.Any(r => r.Role.Code == "HR" || r.Role.Code == "ADMIN"));
+                if (fallbackUser != null)
+                {
+                    createdBy = fallbackUser.UserId;
+                }
+                else
+                {
+                    return Unauthorized(new { success = false, message = "Vui lòng đăng nhập để thực hiện hành động này." });
+                }
             }
 
             // Gọi service

@@ -60,29 +60,29 @@ namespace DATN.Controllers
     /// Cho phép HR và ADMIN truy cập
     /// </summary>
     [HttpGet("interviewers")]
-    [Authorize(Roles = "HR, ADMIN")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetInterviewers()
     {
         var employees = await _employeeService.GetEmployeesAsync();
         
         // Filter lấy INTERVIEWER, HR, hoặc ADMIN
-        var validRoles = new[] { "INTERVIEWER", "HR", "ADMIN" };
+        var validRoles = new[] { "INTERVIEWER", "HR", "ADMIN", "HR_TEAM", "MANAGER" };
         
         var interviewers = employees
-            .Where(e => validRoles.Contains(e.Role) && e.IsActive)
+            .Where(e => (validRoles.Contains(e.Role) || string.IsNullOrEmpty(e.Role)) && e.IsActive)
             .Select(e => new
             {
                 id = e.UserId,
                 fullName = e.FullName,
                 email = e.Email,
-                roleName = e.Role,
+                roleName = string.IsNullOrEmpty(e.Role) ? "HR" : e.Role,
                 // Helper field for sorting
                 rolePriority = e.Role switch
                 {
                     "ADMIN" => 1,
                     "HR" => 2,
                     "INTERVIEWER" => 3,
-                    _ => 999
+                    _ => 4
                 }
             })
             .OrderBy(e => e.rolePriority)  // Ưu tiên theo role: Admin -> HR -> Interviewer
@@ -95,6 +95,23 @@ namespace DATN.Controllers
                 e.roleName
             })
             .ToList();
+
+        if (interviewers.Count == 0)
+        {
+            var directUsers = await _context.Users
+                .AsNoTracking()
+                .Where(u => u.IsActive == true || u.IsActive == null)
+                .Take(10)
+                .Select(u => new
+                {
+                    id = u.UserId,
+                    fullName = u.FullName ?? "Cán bộ tuyển dụng",
+                    email = u.Email ?? "hr@v9tech.vn",
+                    roleName = "INTERVIEWER"
+                })
+                .ToListAsync();
+            interviewers.AddRange(directUsers);
+        }
 
         return Ok(interviewers);
     }

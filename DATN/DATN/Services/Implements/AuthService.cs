@@ -210,16 +210,43 @@ namespace DATN.Services.Implements
             var email = payload.Email;
             var normalizedEmail = email.ToUpper().Trim();
 
-            // 3. Kiểm tra xem email có trong DB chưa
+            // 3. Kiểm tra xem email có trong DB chưa (sử dụng IgnoreQueryFilters và đối soát đa điều kiện Email/NormalizedEmail)
             var existingUser = await _context.Users
-                .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail);
+                .IgnoreQueryFilters()
+                .Include(u => u.UserRoles)
+                    .ThenInclude(ur => ur.Role)
+                .FirstOrDefaultAsync(u =>
+                    (u.NormalizedEmail != null && u.NormalizedEmail == normalizedEmail) ||
+                    u.Email == email ||
+                    (u.Email != null && u.Email.ToUpper() == normalizedEmail));
 
             if (existingUser != null)
             {
-                // CHỐT CHẶN BẢO MẬT: Nếu tài khoản đã tồn tại và là Local → Từ chối
-                if (existingUser.AuthProvider == "Local")
+                // Đồng bộ NormalizedEmail nếu trong DB đang null hoặc chưa chuẩn hóa
+                if (string.IsNullOrEmpty(existingUser.NormalizedEmail) || existingUser.NormalizedEmail != normalizedEmail)
                 {
-                    throw new InvalidOperationException("EMAIL_REGISTERED_LOCALLY");
+                    existingUser.NormalizedEmail = normalizedEmail;
+                }
+
+                // Cập nhật Avatar nếu chưa có
+                if (string.IsNullOrEmpty(existingUser.AvatarUrl) && !string.IsNullOrEmpty(payload.Picture))
+                {
+                    existingUser.AvatarUrl = payload.Picture;
+                }
+
+                // CHỐT CHẶN BẢO MẬT: Nếu tài khoản đã tồn tại và là Local
+                if (string.Equals(existingUser.AuthProvider, "Local", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Nếu là Ứng viên (CANDIDATE) đăng ký qua nộp CV/QR, tự động liên kết để cho phép đăng nhập Google
+                    var isCandidate = existingUser.UserRoles.Any(ur => ur.Role.Code == "CANDIDATE");
+                    if (isCandidate)
+                    {
+                        existingUser.AuthProvider = "LocalAndGoogle";
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException("EMAIL_REGISTERED_LOCALLY");
+                    }
                 }
 
                 // Tài khoản đã là Google hoặc LocalAndGoogle → cho phép đăng nhập
@@ -230,6 +257,7 @@ namespace DATN.Services.Implements
                     throw new UnauthorizedAccessException($"Tài khoản của bạn đã bị khóa. LÝ DO KHÓA: {lockReason} (thời gian: {lockTime}). Rất tiếc, bạn không thể truy cập hệ thống lúc này.");
                 }
 
+                await _context.SaveChangesAsync();
                 return await GenerateJwtToken(existingUser);
             }
 
@@ -251,18 +279,34 @@ namespace DATN.Services.Implements
                 CreatedAt = DateTime.UtcNow
             };
 
-            _context.Users.Add(newUser);
-
-            var userRole = new UserRole
+            try
             {
-                UserId = newUser.UserId,
-                RoleId = candidateRole.RoleId,
-                CreatedAt = DateTime.UtcNow
-            };
-            _context.UserRoles.Add(userRole);
-            await _context.SaveChangesAsync();
+                _context.Users.Add(newUser);
 
-            return await GenerateJwtToken(newUser);
+                var userRole = new UserRole
+                {
+                    UserId = newUser.UserId,
+                    RoleId = candidateRole.RoleId,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.UserRoles.Add(userRole);
+                await _context.SaveChangesAsync();
+
+                return await GenerateJwtToken(newUser);
+            }
+            catch (DbUpdateException)
+            {
+                // Phòng ngừa Race-condition: User đã được tạo trong tích tắc trước đó
+                var fallbackUser = await _context.Users
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(u => u.Email == email || (u.NormalizedEmail != null && u.NormalizedEmail == normalizedEmail));
+
+                if (fallbackUser != null && fallbackUser.IsActive)
+                {
+                    return await GenerateJwtToken(fallbackUser);
+                }
+                throw;
+            }
         }
 
         public async Task<bool> LinkGoogleAsync(Guid userId, string idToken)

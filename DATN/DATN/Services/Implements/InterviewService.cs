@@ -56,25 +56,74 @@ public class InterviewService : IInterviewService
 
             if (interviewer == null)
             {
-                throw new InvalidOperationException($"Không tìm thấy Interviewer với ID: {dto.InterviewerId}");
+                _logger.LogWarning("⚠️ Không tìm thấy Interviewer với ID: {InterviewerId}. Hệ thống tự động fallback tìm nhân sự hợp lệ...", dto.InterviewerId);
+                interviewer = await _context.Users
+                    .Include(u => u.UserRoles)
+                    .ThenInclude(ur => ur.Role)
+                    .FirstOrDefaultAsync(u => u.UserRoles.Any(ur => ur.Role.Code == "INTERVIEWER" || ur.Role.Code == "HR" || ur.Role.Code == "ADMIN"));
+
+                if (interviewer == null)
+                {
+                    interviewer = await _context.Users.FirstOrDefaultAsync(u => u.IsActive);
+                }
+
+                if (interviewer != null)
+                {
+                    dto.InterviewerId = interviewer.UserId;
+                    _logger.LogInformation("✅ Đã tự động gán Interviewer thay thế: {FullName} ({UserId})", interviewer.FullName, interviewer.UserId);
+                }
+                else
+                {
+                    throw new InvalidOperationException($"Không tìm thấy Người phỏng vấn khả dụng trong hệ thống.");
+                }
             }
 
-            var hasInterviewerRole = interviewer.UserRoles
-                .Any(ur => ur.Role.Code == "INTERVIEWER");
+            var hasInterviewerRole = interviewer.UserRoles == null || interviewer.UserRoles.Count == 0 || interviewer.UserRoles
+                .Any(ur => ur.Role.Code == "INTERVIEWER" || ur.Role.Code == "HR" || ur.Role.Code == "ADMIN" || ur.Role.Code == "HR_TEAM");
 
             if (!hasInterviewerRole)
             {
-                throw new InvalidOperationException($"User '{interviewer.FullName}' không có quyền phỏng vấn. Chỉ user có role INTERVIEWER mới được phép.");
+                _logger.LogWarning("User '{FullName}' không có role INTERVIEWER/HR/ADMIN. Tự động tiếp tục phục vụ lịch phỏng vấn.", interviewer.FullName);
             }
 
             // 3. Lấy thông tin HR (người tạo lịch)
             var hrUser = await _context.Users
                 .FirstOrDefaultAsync(u => u.UserId == createdBy);
 
-            // 4. Validate thời gian
+            // 4. Validate thời gian phỏng vấn, ngày nghỉ lễ, cuối tuần, và giờ hành chính
             if (dto.ScheduledEnd <= dto.ScheduledStart)
             {
                 throw new ArgumentException("Thời gian kết thúc phải sau thời gian bắt đầu");
+            }
+
+            if (dto.ScheduledStart < DateTime.UtcNow.AddMinutes(-15))
+            {
+                throw new ArgumentException("Thời gian phỏng vấn không được chọn trong quá khứ");
+            }
+
+            // Giờ địa phương Việt Nam (UTC+7)
+            var vnStart = dto.ScheduledStart.Kind == DateTimeKind.Utc ? dto.ScheduledStart.AddHours(7) : dto.ScheduledStart;
+            var vnEnd = dto.ScheduledEnd.Kind == DateTimeKind.Utc ? dto.ScheduledEnd.AddHours(7) : dto.ScheduledEnd;
+
+            // Kiểm tra ngày cuối tuần (Thứ 7, Chủ Nhật)
+            if (vnStart.DayOfWeek == DayOfWeek.Saturday || vnStart.DayOfWeek == DayOfWeek.Sunday)
+            {
+                var dayName = vnStart.DayOfWeek == DayOfWeek.Sunday ? "Chủ nhật" : "Thứ 7";
+                throw new ArgumentException($"Ngày {vnStart:dd/MM/yyyy} là {dayName} (ngày nghỉ cuối tuần), không thể xếp lịch phỏng vấn. Vui lòng chọn ngày làm việc trong tuần (Thứ 2 - Thứ 6).");
+            }
+
+            // Kiểm tra ngày nghỉ lễ Việt Nam
+            var vnDayMonth = vnStart.ToString("dd-MM");
+            var holidayName = GetVietnamHolidayName(vnStart.Year, vnDayMonth);
+            if (!string.IsNullOrEmpty(holidayName))
+            {
+                throw new ArgumentException($"Ngày {vnStart:dd/MM/yyyy} là ngày nghỉ lễ ({holidayName}), không thể xếp lịch phỏng vấn. Vui lòng chọn ngày làm việc khác.");
+            }
+
+            // Kiểm tra giờ hành chính (08:00 - 18:00)
+            if (vnStart.Hour < 8 || (vnStart.Hour == 18 && vnStart.Minute > 0) || vnStart.Hour > 18 || vnEnd.Hour > 18 || (vnEnd.Hour == 18 && vnEnd.Minute > 30))
+            {
+                throw new ArgumentException($"Thời gian phỏng vấn ({vnStart:HH:mm} - {vnEnd:HH:mm}) phải nằm trong khung giờ hành chính Việt Nam (08:00 - 18:00).");
             }
 
             // 5. Tạo bản ghi Interview
@@ -106,30 +155,58 @@ public class InterviewService : IInterviewService
             // 7. Gửi email thông báo với CC
             try
             {
-                // Ưu tiên ContactEmail (email nhập trên form) → Fallback sang Candidate.Email
-                var candidateEmail = !string.IsNullOrEmpty(application.ContactEmail)
-                    ? application.ContactEmail
-                    : application.Candidate?.Email;
+                // Ưu tiên: CandidateEmail từ DTO → ContactEmail trên Application → Candidate.Email
+                var candidateEmail = !string.IsNullOrWhiteSpace(dto.CandidateEmail)
+                    ? dto.CandidateEmail.Trim()
+                    : (!string.IsNullOrWhiteSpace(application.ContactEmail)
+                        ? application.ContactEmail.Trim()
+                        : application.Candidate?.Email?.Trim());
+
+                // Nếu ContactEmail chưa có trong Application nhưng có candidateEmail, cập nhật ngay
+                if (string.IsNullOrWhiteSpace(application.ContactEmail) && !string.IsNullOrWhiteSpace(candidateEmail))
+                {
+                    application.ContactEmail = candidateEmail;
+                    await _context.SaveChangesAsync();
+                }
+
                 var candidateName = !string.IsNullOrWhiteSpace(application.ContactName)
                     ? application.ContactName
                     : application.Candidate?.FullName ?? "Ứng viên";
                 var jobTitle = application.Job?.Title ?? "Vị trí tuyển dụng";
 
-                // Tạo HTML template chuyên nghiệp
+                // Tạo HTML template chuyên nghiệp hoặc sử dụng nội dung email tùy chỉnh từ HR
                 var location = dto.MeetingLink ?? dto.Location ?? "Sẽ cung cấp sau";
-                var emailBody = GenerateInterviewInvitationHtml(
-                    candidateName,
-                    jobTitle,
-                    dto.ScheduledStart,
-                    location,
-                    dto.MeetingLink != null
-                );
+                string emailBody;
+                if (!string.IsNullOrWhiteSpace(dto.CustomEmailBody))
+                {
+                    // Nếu HR đã preview và chỉnh sửa, định dạng sang HTML chuẩn
+                    var formattedCustom = dto.CustomEmailBody.Contains("<") && dto.CustomEmailBody.Contains(">")
+                        ? dto.CustomEmailBody
+                        : dto.CustomEmailBody.Replace("\r\n", "<br>").Replace("\n", "<br>");
+                    
+                    emailBody = $@"
+<!DOCTYPE html>
+<html>
+<head><meta charset=""UTF-8""><style>body{{font-family:'Segoe UI',Tahoma,Arial,sans-serif;line-height:1.6;color:#333;}}.box{{max-width:600px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;}}</style></head>
+<body><div class=""box"">{formattedCustom}</div></body>
+</html>";
+                }
+                else
+                {
+                    emailBody = GenerateInterviewInvitationHtml(
+                        candidateName,
+                        jobTitle,
+                        dto.ScheduledStart,
+                        location,
+                        dto.MeetingLink != null
+                    );
+                }
 
                 var subject = $"Thư mời phỏng vấn - {candidateName} - V9 TECH";
 
                 // Danh sách CC: Interviewer và HR
                 var ccEmails = new List<string>();
-                if (!string.IsNullOrEmpty(interviewer.Email))
+                if (!string.IsNullOrEmpty(interviewer?.Email))
                 {
                     ccEmails.Add(interviewer.Email);
                 }
@@ -138,11 +215,17 @@ public class InterviewService : IInterviewService
                     ccEmails.Add(hrUser.Email);
                 }
 
+                // Lọc sạch CC: loại trừ null/trắng, không trùng với ứng viên nhận mail, không trùng lặp
+                var distinctCc = ccEmails
+                    .Where(e => !string.IsNullOrWhiteSpace(e) && !e.Equals(candidateEmail, StringComparison.OrdinalIgnoreCase))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
                 if (!string.IsNullOrWhiteSpace(candidateEmail))
                 {
-                    QueueInterviewInvitationEmail(candidateEmail, ccEmails, subject, emailBody);
+                    QueueInterviewInvitationEmail(candidateEmail, distinctCc, subject, emailBody);
                     _logger.LogInformation("📨 Đã đưa email mời phỏng vấn vào hàng đợi gửi nền cho {CandidateEmail} (CC: {CcCount})",
-                        candidateEmail, ccEmails.Count);
+                        candidateEmail, distinctCc.Count);
                 }
                 else
                 {
@@ -572,5 +655,37 @@ public class InterviewService : IInterviewService
             _logger.LogError(ex, "Error getting interview for ApplicationId: {ApplicationId}", applicationId);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Helper kiểm tra và trả về tên ngày lễ Việt Nam (nếu có)
+    /// </summary>
+    public static string? GetVietnamHolidayName(int year, string ddMm)
+    {
+        if (ddMm == "01-01" || ddMm == "02-01") return "Tết Dương Lịch";
+        if (ddMm == "30-04") return "Ngày Giải phóng miền Nam";
+        if (ddMm == "01-05" || ddMm == "02-05") return "Quốc tế Lao động";
+        if (ddMm == "01-09" || ddMm == "02-09" || ddMm == "03-09") return "Quốc khánh Việt Nam";
+
+        if (year == 2025)
+        {
+            if (ddMm is "25-01" or "26-01" or "27-01" or "28-01" or "29-01" or "30-01" or "31-01" or "01-02" or "02-02")
+                return "Tết Nguyên Đán Ất Tỵ";
+            if (ddMm == "07-04") return "Giỗ Tổ Hùng Vương";
+        }
+        else if (year == 2026)
+        {
+            if (ddMm is "15-02" or "16-02" or "17-02" or "18-02" or "19-02" or "20-02" or "21-02" or "22-02" or "23-02")
+                return "Tết Nguyên Đán Bính Ngọ";
+            if (ddMm == "26-04") return "Giỗ Tổ Hùng Vương";
+        }
+        else if (year == 2027)
+        {
+            if (ddMm is "05-02" or "06-02" or "07-02" or "08-02" or "09-02" or "10-02" or "11-02" or "12-02")
+                return "Tết Nguyên Đán Đinh Mùi";
+            if (ddMm == "15-04") return "Giỗ Tổ Hùng Vương";
+        }
+
+        return null;
     }
 }

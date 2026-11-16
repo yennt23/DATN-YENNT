@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using DATN.Data;
 using DATN.Entities;
 using DATN.Services.Interfaces;
@@ -15,13 +16,16 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
 {
     private readonly DATNContext _context;
     private readonly ILogger<HrOperationsBusinessService> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public HrOperationsBusinessService(
         DATNContext context,
-        ILogger<HrOperationsBusinessService> logger)
+        ILogger<HrOperationsBusinessService> logger,
+        IServiceScopeFactory scopeFactory)
     {
         _context = context;
         _logger = logger;
+        _scopeFactory = scopeFactory;
     }
 
     /// <summary>
@@ -126,6 +130,40 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
             };
         }
 
+        // Validate ngày xếp ca phỏng vấn
+        var requestedDate = request.ScheduledDate.Date;
+        var today = DateTime.UtcNow.Date;
+        if (requestedDate < today)
+        {
+            return new BatchScheduleResultDto
+            {
+                Success = false,
+                Message = "Ngày xếp ca phỏng vấn không được chọn trong quá khứ."
+            };
+        }
+
+        // Validate không phải ngày cuối tuần (Thứ 7, Chủ Nhật)
+        if (requestedDate.DayOfWeek == DayOfWeek.Saturday || requestedDate.DayOfWeek == DayOfWeek.Sunday)
+        {
+            var dayName = requestedDate.DayOfWeek == DayOfWeek.Sunday ? "Chủ nhật" : "Thứ 7";
+            return new BatchScheduleResultDto
+            {
+                Success = false,
+                Message = $"Ngày {requestedDate:dd/MM/yyyy} là {dayName} (ngày nghỉ cuối tuần), không thể xếp ca phỏng vấn. Vui lòng chọn ngày làm việc trong tuần (Thứ 2 - Thứ 6)."
+            };
+        }
+
+        // Validate không phải ngày nghỉ lễ Việt Nam
+        var holidayName = InterviewService.GetVietnamHolidayName(requestedDate.Year, requestedDate.ToString("dd-MM"));
+        if (!string.IsNullOrEmpty(holidayName))
+        {
+            return new BatchScheduleResultDto
+            {
+                Success = false,
+                Message = $"Ngày {requestedDate:dd/MM/yyyy} là ngày nghỉ lễ ({holidayName}), không thể xếp ca phỏng vấn. Vui lòng chọn ngày làm việc khác."
+            };
+        }
+
         var capacity = request.MaxCapacity > 0 ? request.MaxCapacity : 50;
         var totalCandidates = request.ApplicationIds.Count;
 
@@ -133,8 +171,10 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
         var job = await _context.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.JobId == request.JobId);
         var jobPrefix = !string.IsNullOrWhiteSpace(job?.Code) ? job.Code : (job?.Title?.Length >= 4 ? job.Title.Substring(0, 4).ToUpperInvariant() : "IND");
 
-        // Lấy danh sách hồ sơ ứng viên
+        // Lấy danh sách hồ sơ ứng viên (kèm Candidate và Job để lấy email & thông tin gửi thông báo)
         var applications = await _context.Applications
+            .Include(a => a.Candidate)
+            .Include(a => a.Job)
             .Where(a => request.ApplicationIds.Contains(a.ApplicationId))
             .ToListAsync();
 
@@ -254,6 +294,9 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
                 MaxCapacity = capacity
             });
 
+            // Gửi email thông báo ca phỏng vấn tự động cho các ứng viên trong lô có email
+            QueueBatchInterviewEmails(chunk, batch, job?.Title ?? "Vị trí tuyển dụng", interviewTime, shiftDisplayName);
+
             // 4. Luân chuyển slot cho ca tiếp theo (nếu còn ứng viên chưa được xếp)
             if (i < candidateChunks.Count - 1)
             {
@@ -263,12 +306,14 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
                 }
                 else
                 {
-                    currentDate = currentDate.AddDays(1);
-                    // Bỏ qua Chủ Nhật nếu rơi vào ngày nghỉ
-                    if (currentDate.DayOfWeek == DayOfWeek.Sunday)
+                    // Tự động bỏ qua Thứ 7, Chủ Nhật và các ngày nghỉ lễ Việt Nam
+                    do
                     {
                         currentDate = currentDate.AddDays(1);
-                    }
+                    } while (currentDate.DayOfWeek == DayOfWeek.Saturday ||
+                             currentDate.DayOfWeek == DayOfWeek.Sunday ||
+                             InterviewService.GetVietnamHolidayName(currentDate.Year, currentDate.ToString("dd-MM")) != null);
+
                     currentShift = "MORNING_08_11";
                 }
             }
@@ -507,6 +552,90 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
     }
 
     #region Helpers
+    private void QueueBatchInterviewEmails(
+        IEnumerable<Application> applications,
+        InterviewBatch batch,
+        string jobTitle,
+        DateTime interviewTime,
+        string shiftDisplayName)
+    {
+        var candidateList = applications.ToList();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+
+                var formattedDate = interviewTime.ToString("dd/MM/yyyy");
+                var formattedTime = interviewTime.ToString("HH:mm");
+
+                foreach (var app in candidateList)
+                {
+                    var toEmail = !string.IsNullOrWhiteSpace(app.ContactEmail)
+                        ? app.ContactEmail
+                        : app.Candidate?.Email;
+
+                    if (string.IsNullOrWhiteSpace(toEmail)) continue;
+
+                    var candidateName = !string.IsNullOrWhiteSpace(app.ContactName)
+                        ? app.ContactName
+                        : app.Candidate?.FullName ?? "Ứng viên";
+
+                    var subject = $"[V9 TECH] Giấy mời tham gia ca phỏng vấn tuyển dụng - {batch.BatchCode}";
+                    var htmlBody = $@"
+<!DOCTYPE html>
+<html>
+<head><meta charset=""UTF-8""><style>body{{font-family:'Segoe UI',Tahoma,Arial,sans-serif;line-height:1.6;color:#333;}}.container{{max-width:600px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;}}.header{{background:#2563eb;color:#ffffff;padding:20px;border-radius:8px;text-align:center;}}.info{{background:#f8fafc;padding:16px;border-radius:8px;border-left:4px solid #2563eb;margin:16px 0;}}</style></head>
+<body>
+    <div class=""container"">
+        <div class=""header"">
+            <h2 style=""margin:0;"">THÔNG BÁO XẾP CA PHỎNG VẤN TUYỂN DỤNG</h2>
+            <p style=""margin:4px 0 0 0;"">Hệ thống Tuyển dụng V9 TECH</p>
+        </div>
+        <p>Kính gửi <strong>{candidateName}</strong>,</p>
+        <p>Hồ sơ ứng tuyển của bạn cho vị trí <strong>{jobTitle}</strong> đã được Hội đồng tuyển dụng tiếp nhận và xếp vào ca phỏng vấn tập trung như sau:</p>
+        
+        <div class=""info"">
+            <p style=""margin:4px 0;""><strong>Mã ca phỏng vấn:</strong> <span style=""color:#2563eb;font-weight:bold;"">{batch.BatchCode}</span></p>
+            <p style=""margin:4px 0;""><strong>Ca phỏng vấn:</strong> {shiftDisplayName}</p>
+            <p style=""margin:4px 0;""><strong>Ngày phỏng vấn:</strong> {formattedDate}</p>
+            <p style=""margin:4px 0;""><strong>Thời gian tập trung:</strong> {formattedTime}</p>
+            <p style=""margin:4px 0;""><strong>Địa điểm:</strong> {batch.LocationRoom ?? "Hội trường tuyển dụng nhà máy"}</p>
+        </div>
+
+        <p><strong>Lưu ý quan trọng khi tham gia phỏng vấn:</strong></p>
+        <ul>
+            <li>Vui lòng có mặt trước giờ phỏng vấn 15 phút để làm thủ tục tiếp đón.</li>
+            <li>Mang theo bản gốc Căn cước công dân (CCCD) gắn chip để xác thực tại cổng bảo vệ.</li>
+            <li>Trang phục lịch sự, gọn gàng, mang theo bút viết cá nhân.</li>
+        </ul>
+
+        <p>Nếu bạn cần hỗ trợ hoặc thông báo dời ca phỏng vấn vì lý do bất khả kháng, vui lòng liên hệ trực tiếp Ban Nhân sự V9 TECH.</p>
+        
+        <p style=""margin-top:24px;"">Trân trọng,<br><strong>Phòng Tuyển Dụng V9 TECH</strong></p>
+    </div>
+</body>
+</html>";
+
+                    try
+                    {
+                        await emailService.SendEmailAsync(toEmail.Trim(), subject, htmlBody);
+                        _logger.LogInformation("📧 Đã gửi email ca phỏng vấn {BatchCode} đến {Email}", batch.BatchCode, toEmail);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "⚠️ Gửi email ca phỏng vấn {BatchCode} thất bại cho {Email}", batch.BatchCode, toEmail);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Lỗi luồng gửi email hàng loạt cho ca {BatchCode}", batch.BatchCode);
+            }
+        });
+    }
+
     private static string NormalizePhone(string? phone)
     {
         if (string.IsNullOrWhiteSpace(phone)) return string.Empty;

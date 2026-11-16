@@ -11,6 +11,13 @@ export type ApplicationSource = 'PDF_UPLOAD' | 'GOOGLE_FORM_QR' | 'WALK_IN';
 export type ScoringMethod = 'GEMINI_AI' | 'RULE_ENGINE';
 export type QuickTabType = 'ALL' | 'PROFESSIONAL' | 'MASS_LABOR' | 'FAST_TRACK' | 'ONBOARDED' | 'TALENT_POOL' | 'RULE_REJECTED';
 
+export interface InterviewerItem {
+  id: string;
+  fullName: string;
+  email: string;
+  roleName: string;
+}
+
 export interface OralInterviewChecklist {
   handEyePass: boolean;
   visionPass: boolean;
@@ -168,6 +175,50 @@ export class ApplicationsManagementComponent implements OnInit {
   offerNote = signal<string>('Lương cơ bản thỏa thuận 18.000.000 VNĐ Net + phụ cấp kỹ sư');
   isRescoring = signal<boolean>(false);
 
+  // ── Interview Modal State (Website & QR 1-1) ──
+  showInterviewModal = signal<boolean>(false);
+  selectedInterviewApp = signal<IndustrialApplication | null>(null);
+
+  interviewDate = signal<string>('');
+  interviewTime = signal<string>('09:00');
+  interviewType = signal<'ONLINE' | 'OFFLINE'>('ONLINE');
+  interviewLocation = signal<string>('Hội trường Tuyển dụng & Đào tạo Nhà máy V9 TECH - KCN Yên Phong');
+  selectedInterviewerId = signal<string>('11111111-1111-1111-1111-111111111111');
+  emailPreviewContent = signal<string>('');
+  aiOpeningText = signal<string>('');
+
+  dateValidationError = signal<string>('');
+  timeValidationError = signal<string>('');
+  locationValidationError = signal<string>('');
+  batchDateValidationError = signal<string>('');
+
+  isGeneratingAI = signal<boolean>(false);
+  isSendingInterview = signal<boolean>(false);
+
+  interviewers = signal<InterviewerItem[]>([
+    { id: '11111111-1111-1111-1111-111111111111', fullName: 'Phạm Đình Sơn', email: 'sontestdatn@gmail.com', roleName: 'HR Manager' },
+    { id: '22222222-2222-2222-2222-222222222222', fullName: 'Nguyễn Văn Bình', email: 'binh.nv@v9tech.vn', roleName: 'Quản đốc Xưởng SMT' },
+    { id: '33333333-3333-3333-3333-333333333333', fullName: 'Trần Minh Hoàng', email: 'hoang.tm@v9tech.vn', roleName: 'Trưởng nhóm Kỹ thuật PLC' },
+    { id: '44444444-4444-4444-4444-444444444444', fullName: 'Lê Thu Trang', email: 'trang.lt@v9tech.vn', roleName: 'HR Tuyển dụng' }
+  ]);
+  isLoadingInterviewers = signal<boolean>(false);
+  vietnameseHolidays = signal<string[]>([
+    '01-01', '02-01',
+    '15-02', '16-02', '17-02', '18-02', '19-02', '20-02', '21-02', '22-02', '23-02',
+    '26-04', '30-04', '01-05', '01-09', '02-09', '03-09'
+  ]);
+
+  isInterviewFormValid = computed(() => {
+    const d = this.interviewDate();
+    const t = this.interviewTime();
+    const loc = (this.interviewLocation() || '').trim();
+    const invId = this.selectedInterviewerId();
+
+    if (!d || !t || !loc || !invId) return false;
+    if (this.dateValidationError() || this.timeValidationError() || this.locationValidationError()) return false;
+    return true;
+  });
+
   // ── V5 Factory & HR Operations State ──
   showBatchInterviewModal = signal<boolean>(false);
   batchInterviewDate = signal<string>(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
@@ -287,6 +338,8 @@ export class ApplicationsManagementComponent implements OnInit {
 
     // Tải dữ liệu thực tế 100% từ Backend Database API
     this.fetchBackendApplications();
+    this.loadVietnamHolidays();
+    this.loadInterviewers();
   }
 
   fetchBackendApplications(): void {
@@ -753,6 +806,16 @@ export class ApplicationsManagementComponent implements OnInit {
       this.toast.warning('Chưa chọn ứng viên', 'Vui lòng tích chọn ít nhất 1 ứng viên để xếp ca phỏng vấn.');
       return;
     }
+
+    // Tính ngày làm việc hợp lệ tiếp theo (bỏ qua Thứ 7, Chủ Nhật và ngày nghỉ lễ)
+    let nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + 1);
+    while (this.isWeekend(nextDate) || this.isVietnamHoliday(nextDate)) {
+      nextDate.setDate(nextDate.getDate() + 1);
+    }
+    this.batchInterviewDate.set(nextDate.toISOString().split('T')[0]);
+    this.batchDateValidationError.set('');
+
     this.showBatchInterviewModal.set(true);
 
     this.http.get<any[]>('/api/hr-operations/batches').subscribe({
@@ -781,6 +844,12 @@ export class ApplicationsManagementComponent implements OnInit {
     const ids = Array.from(this.selectedIds());
     if (ids.length === 0) return;
 
+    // Validate ngày xếp ca (chống cuối tuần & ngày nghỉ lễ)
+    if (!this.validateBatchDate(this.batchInterviewDate())) {
+      this.toast.warning('Ngày xếp ca không hợp lệ', this.batchDateValidationError() || 'Vui lòng chọn ngày làm việc trong tuần (Thứ 2 - Thứ 6) không trùng ngày nghỉ lễ.');
+      return;
+    }
+
     this.isSchedulingBatches.set(true);
 
     const targetJobId = this.selectedJobId() !== 'ALL' && !this.selectedJobId().startsWith('job-')
@@ -801,7 +870,7 @@ export class ApplicationsManagementComponent implements OnInit {
           this.isSchedulingBatches.set(false);
           this.showBatchInterviewModal.set(false);
           this.selectedIds.set(new Set());
-          this.toast.success('Xếp ca thành công', res?.message || `Đã chia tách và xếp ca cho ${ids.length} ứng viên!`);
+          this.toast.success('Xếp ca & Gửi mail thành công', res?.message || `Đã chia tách và xếp ca cho ${ids.length} ứng viên kèm email thông báo!`);
           this.fetchBackendApplications();
         },
         error: (err) => {
@@ -820,7 +889,393 @@ export class ApplicationsManagementComponent implements OnInit {
         );
         this.selectedIds.set(new Set());
         const splitText = ids.length > 50 ? `(Đã tự động chia làm ${Math.ceil(ids.length / 50)} ca)` : '';
-        this.toast.success('Xếp ca thành công', `Đã xếp ${ids.length} ứng viên vào ca phỏng vấn ${splitText}.`);
+        this.toast.success('Xếp ca thành công', `Đã xếp ${ids.length} ứng viên vào ca phỏng vấn ${splitText} và gửi email thông báo.`);
+      }, 400);
+    }
+  }
+
+  // ── VIETNAM HOLIDAYS & INTERVIEWERS LOADING ──────────────────────────
+  loadVietnamHolidays(): void {
+    const currentYear = new Date().getFullYear();
+    this.http.get<{ holidays: string[] }>(`/api/master-data/vietnam-holidays/${currentYear}`).subscribe({
+      next: (res) => {
+        if (res && res.holidays && res.holidays.length > 0) {
+          this.vietnameseHolidays.set(res.holidays);
+        }
+      },
+      error: () => {
+        this.vietnameseHolidays.set([
+          '01-01', '02-01',
+          '15-02', '16-02', '17-02', '18-02', '19-02', '20-02', '21-02', '22-02', '23-02',
+          '26-04', '30-04', '01-05', '01-09', '02-09', '03-09'
+        ]);
+      }
+    });
+  }
+
+  loadInterviewers(): void {
+    this.isLoadingInterviewers.set(true);
+    this.http.get<any>('/api/employees/interviewers').subscribe({
+      next: (res) => {
+        this.isLoadingInterviewers.set(false);
+        const rawList = Array.isArray(res) ? res : (res?.data || []);
+        if (Array.isArray(rawList) && rawList.length > 0) {
+          const mapped: InterviewerItem[] = rawList.map((item: any) => ({
+            id: String(item.id || item.userId || item.Id),
+            fullName: item.fullName || item.name || item.FullName || 'Người phỏng vấn',
+            email: item.email || item.Email || '',
+            roleName: item.roleName || item.role || item.RoleName || 'INTERVIEWER'
+          }));
+          this.interviewers.set(mapped);
+          if (!this.selectedInterviewerId() || !mapped.some(m => m.id === this.selectedInterviewerId())) {
+            this.selectedInterviewerId.set(mapped[0].id);
+          }
+        }
+      },
+      error: () => {
+        this.isLoadingInterviewers.set(false);
+      }
+    });
+  }
+
+  // ── DATE, WEEKEND & BUSINESS HOURS VALIDATIONS ─────────────────────────
+  isWeekend(date: Date): boolean {
+    const day = date.getDay();
+    return day === 0 || day === 6; // 0: Chủ nhật, 6: Thứ 7
+  }
+
+  isVietnamHoliday(date: Date): boolean {
+    const d = String(date.getDate()).padStart(2, '0');
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const key = `${d}-${m}`;
+    return this.vietnameseHolidays().includes(key);
+  }
+
+  validateInterviewDate(dateStr: string): boolean {
+    if (!dateStr) {
+      this.dateValidationError.set('Vui lòng chọn ngày phỏng vấn');
+      return false;
+    }
+    const [y, m, d] = dateStr.split('-').map(Number);
+    if (!y || !m || !d) {
+      this.dateValidationError.set('Định dạng ngày không hợp lệ');
+      return false;
+    }
+    const selected = new Date(y, m - 1, d);
+    selected.setHours(0, 0, 0, 0);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (selected < today) {
+      this.dateValidationError.set('Ngày phỏng vấn phải là ngày trong tương lai (không chọn ngày quá khứ)');
+      return false;
+    }
+
+    if (this.isWeekend(selected)) {
+      const dayName = selected.getDay() === 0 ? 'Chủ nhật' : 'Thứ 7';
+      this.dateValidationError.set(`Ngày ${dateStr} là ${dayName} (ngày nghỉ cuối tuần). Vui lòng chọn ngày làm việc trong tuần (Thứ 2 - Thứ 6)`);
+      return false;
+    }
+
+    if (this.isVietnamHoliday(selected)) {
+      this.dateValidationError.set(`Ngày ${dateStr} là ngày nghỉ lễ Việt Nam, không thể xếp lịch phỏng vấn`);
+      return false;
+    }
+
+    this.dateValidationError.set('');
+    return true;
+  }
+
+  validateInterviewTime(timeStr: string): boolean {
+    if (!timeStr) {
+      this.timeValidationError.set('Vui lòng chọn giờ phỏng vấn');
+      return false;
+    }
+    const [h, m] = timeStr.split(':').map(Number);
+    if (isNaN(h)) {
+      this.timeValidationError.set('Định dạng giờ không hợp lệ');
+      return false;
+    }
+    // Giờ hành chính: 08:00 - 18:00
+    if (h < 8 || (h === 18 && m > 0) || h > 18) {
+      this.timeValidationError.set('Thời gian phỏng vấn phải nằm trong khung giờ hành chính (08:00 - 18:00)');
+      return false;
+    }
+    this.timeValidationError.set('');
+    return true;
+  }
+
+  validateInterviewLocation(): boolean {
+    const loc = (this.interviewLocation() || '').trim();
+    if (this.interviewType() === 'ONLINE') {
+      if (!loc) {
+        this.locationValidationError.set('Vui lòng nhập link meeting (VD: Google Meet, MS Teams, Zoom)');
+        return false;
+      }
+      try {
+        new URL(loc);
+        this.locationValidationError.set('');
+        return true;
+      } catch {
+        this.locationValidationError.set('Đường link meeting không đúng định dạng URL (VD: https://meet.google.com/xxx-yyy)');
+        return false;
+      }
+    } else {
+      if (!loc || loc.length < 5) {
+        this.locationValidationError.set('Vui lòng nhập địa điểm phỏng vấn cụ thể (tối thiểu 5 ký tự)');
+        return false;
+      }
+      this.locationValidationError.set('');
+      return true;
+    }
+  }
+
+  validateBatchDate(dateStr: string): boolean {
+    if (!dateStr) {
+      this.batchDateValidationError.set('Vui lòng chọn ngày xếp ca');
+      return false;
+    }
+    const [y, m, d] = dateStr.split('-').map(Number);
+    if (!y || !m || !d) {
+      this.batchDateValidationError.set('Định dạng ngày không hợp lệ');
+      return false;
+    }
+    const selected = new Date(y, m - 1, d);
+    selected.setHours(0, 0, 0, 0);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (selected < today) {
+      this.batchDateValidationError.set('Ngày xếp ca phỏng vấn phải là ngày trong tương lai');
+      return false;
+    }
+
+    if (this.isWeekend(selected)) {
+      const dayName = selected.getDay() === 0 ? 'Chủ nhật' : 'Thứ 7';
+      this.batchDateValidationError.set(`Ngày ${dateStr} là ${dayName} (ngày nghỉ cuối tuần). Vui lòng chọn ngày làm việc trong tuần (Thứ 2 - Thứ 6)`);
+      return false;
+    }
+
+    if (this.isVietnamHoliday(selected)) {
+      this.batchDateValidationError.set(`Ngày ${dateStr} là ngày nghỉ lễ Việt Nam, không thể xếp ca`);
+      return false;
+    }
+
+    this.batchDateValidationError.set('');
+    return true;
+  }
+
+  isFormValidForSubmit(): boolean {
+    const d = this.interviewDate();
+    const t = this.interviewTime();
+    const loc = (this.interviewLocation() || '').trim();
+    const invId = this.selectedInterviewerId();
+
+    if (!d || !t || !loc || !invId) return false;
+    if (this.dateValidationError() || this.timeValidationError() || this.locationValidationError()) return false;
+    return true;
+  }
+
+  // ── EMAIL PREVIEW & AI PERSONALIZATION ─────────────────────────────────
+  updateEmailPreview(): void {
+    const app = this.selectedInterviewApp();
+    if (!app) return;
+
+    const dateFormatted = this.interviewDate()
+      ? new Date(this.interviewDate()).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '[Chưa chọn ngày]';
+    const typeText = this.interviewType() === 'ONLINE' ? 'Online (Trực tuyến qua Video Call)' : 'Offline (Trực tiếp tại trụ sở)';
+    const locLabel = this.interviewType() === 'ONLINE' ? 'Đường dẫn tham gia (Link Meeting)' : 'Địa điểm tiếp đón';
+    const locVal = this.interviewLocation() || '[Chưa nhập]';
+    const candidateName = app.candidateName || 'Ứng viên';
+    const jobTitle = app.jobTitle || 'Vị trí tuyển dụng';
+
+    this.emailPreviewContent.set(
+`${this.aiOpeningText() ? this.aiOpeningText() + '\n\n' : ''}Kính gửi ${candidateName},
+
+Phòng Tuyển dụng V9 TECH trân trọng thông báo hồ sơ ứng tuyển của bạn cho vị trí "${jobTitle}" đã được Hội đồng tuyển dụng đánh giá cao và lựa chọn vào vòng phỏng vấn tiếp theo.
+
+THÔNG TIN LỊCH PHỎNG VẤN CHI TIẾT:
+- Vị trí ứng tuyển: ${jobTitle}
+- Thời gian: ${dateFormatted} lúc ${this.interviewTime() || '[Chưa chọn giờ]'}
+- Hình thức: ${typeText}
+- ${locLabel}: ${locVal}
+
+LƯU Ý KHI THAM GIA PHỎNG VẤN:
+1. Vui lòng xác nhận tham gia bằng cách phản hồi lại email này trước thời gian phỏng vấn ít nhất 12 giờ.
+2. Chuẩn bị đường truyền mạng và không gian yên tĩnh (nếu Online) hoặc mang theo bản gốc Căn cước công dân (nếu Offline).
+3. Đề nghị có mặt trước giờ hẹn 10-15 phút để đảm bảo buổi phỏng vấn diễn ra thuận lợi.
+
+Nếu bạn cần hỗ trợ hoặc có nhu cầu dời lịch vì lý do bất khả kháng, xin vui lòng phản hồi email này để được sắp xếp lại.
+
+Trân trọng,
+Hội đồng Tuyển dụng V9 TECH`
+    );
+  }
+
+  generateAIOpening(): void {
+    const app = this.selectedInterviewApp();
+    if (!app) return;
+
+    this.isGeneratingAI.set(true);
+
+    const isGuidCandidate = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(app.candidateId);
+    const isGuidJob = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(app.jobId);
+
+    if (isGuidCandidate && isGuidJob) {
+      this.http.post<{ opening: string }>('/api/interviews/generate-opening', {
+        candidateId: app.candidateId,
+        jobId: app.jobId
+      }).subscribe({
+        next: (res) => {
+          this.isGeneratingAI.set(false);
+          if (res?.opening) {
+            this.aiOpeningText.set(res.opening);
+            this.updateEmailPreview();
+            this.toast.success('AI gợi ý thành công', 'Đã tạo đoạn mở đầu email cá nhân hóa cho ứng viên!');
+          }
+        },
+        error: () => {
+          this.isGeneratingAI.set(false);
+          this.fallbackAiOpening(app);
+        }
+      });
+    } else {
+      setTimeout(() => {
+        this.isGeneratingAI.set(false);
+        this.fallbackAiOpening(app);
+      }, 500);
+    }
+  }
+
+  private fallbackAiOpening(app: IndustrialApplication): void {
+    const candidateName = app.candidateName;
+    const trackNote = app.recruitmentTrack === 'PROFESSIONAL'
+      ? `Chúng tôi rất ấn tượng với hồ sơ chuyên môn và kinh nghiệm thực chiến của bạn trong lĩnh vực ${app.departmentName}.`
+      : `Chúng tôi đánh giá cao tinh thần trách nhiệm và sự nhanh nhẹn, sẵn sàng đáp ứng yêu cầu ca kíp sản xuất của bạn.`;
+    this.aiOpeningText.set(`Chào ${candidateName},\n${trackNote}`);
+    this.updateEmailPreview();
+    this.toast.success('Gợi ý hoàn tất', 'Đã tạo đoạn mở đầu cá nhân hóa cho ứng viên!');
+  }
+
+  // ── OPEN & CLOSE INTERVIEW MODAL ──────────────────────────────────────
+  openInterviewModal(app: IndustrialApplication, event?: Event): void {
+    if (event) event.stopPropagation();
+    this.selectedInterviewApp.set(app);
+
+    // Tính ngày làm việc hợp lệ tiếp theo (bỏ qua Thứ 7, Chủ Nhật và ngày nghỉ lễ)
+    let nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + 1);
+    while (this.isWeekend(nextDate) || this.isVietnamHoliday(nextDate)) {
+      nextDate.setDate(nextDate.getDate() + 1);
+    }
+    const dateStr = nextDate.toISOString().split('T')[0];
+
+    this.interviewDate.set(dateStr);
+    this.interviewTime.set('09:00');
+    this.interviewType.set(app.recruitmentTrack === 'PROFESSIONAL' ? 'ONLINE' : 'OFFLINE');
+    this.interviewLocation.set(
+      app.recruitmentTrack === 'PROFESSIONAL'
+        ? 'https://meet.google.com/ats-v9tech-interview'
+        : 'Hội trường Tuyển dụng & Đào tạo Nhà máy V9 TECH - KCN Yên Phong'
+    );
+    this.aiOpeningText.set('');
+    this.validateInterviewDate(dateStr);
+    this.validateInterviewTime('09:00');
+    this.validateInterviewLocation();
+
+    if (this.interviewers().length > 0) {
+      if (!this.selectedInterviewerId() || !this.interviewers().some(i => i.id === this.selectedInterviewerId())) {
+        this.selectedInterviewerId.set(this.interviewers()[0].id);
+      }
+    }
+
+    this.updateEmailPreview();
+    this.showInterviewModal.set(true);
+
+    this.loadInterviewers();
+  }
+
+  closeInterviewModal(): void {
+    this.showInterviewModal.set(false);
+    this.selectedInterviewApp.set(null);
+  }
+
+  sendInterviewInvitation(): void {
+    const app = this.selectedInterviewApp();
+    if (!app) return;
+
+    if (!this.isFormValidForSubmit()) {
+      if (this.dateValidationError()) this.toast.warning('Ngày không hợp lệ', this.dateValidationError());
+      else if (this.timeValidationError()) this.toast.warning('Giờ không hợp lệ', this.timeValidationError());
+      else if (this.locationValidationError()) this.toast.warning('Địa điểm không hợp lệ', this.locationValidationError());
+      else this.toast.warning('Thông tin chưa đầy đủ', 'Vui lòng chọn người phỏng vấn và nhập đủ thông tin.');
+      return;
+    }
+
+    this.isSendingInterview.set(true);
+
+    const startIso = `${this.interviewDate()}T${this.interviewTime()}:00`;
+    const endDateObj = new Date(new Date(startIso).getTime() + 60 * 60000);
+    const endHours = String(endDateObj.getHours()).padStart(2, '0');
+    const endMins = String(endDateObj.getMinutes()).padStart(2, '0');
+    const endIso = `${this.interviewDate()}T${endHours}:${endMins}:00`;
+
+    const payload = {
+      applicationId: app.applicationId,
+      interviewerId: this.selectedInterviewerId(),
+      title: `Phỏng vấn ứng viên ${app.candidateName} - ${app.jobTitle || 'Tuyển dụng'}`,
+      scheduledStart: startIso,
+      scheduledEnd: endIso,
+      meetingLink: this.interviewType() === 'ONLINE' ? this.interviewLocation() : null,
+      location: this.interviewType() === 'OFFLINE' ? this.interviewLocation() : null,
+      customEmailBody: this.emailPreviewContent(),
+      candidateEmail: app.email
+    };
+
+    const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(app.applicationId);
+    if (isGuid) {
+      this.http.post<any>(`/api/applications/${app.applicationId}/schedule-interview`, payload).subscribe({
+        next: (res) => {
+          this.isSendingInterview.set(false);
+          this.showInterviewModal.set(false);
+
+          this.applications.update(list =>
+            list.map(item => item.applicationId === app.applicationId ? { ...item, status: 'ScheduledInterview' } : item)
+          );
+          if (this.selectedApp()?.applicationId === app.applicationId) {
+            this.selectedApp.update(curr => curr ? { ...curr, status: 'ScheduledInterview' } : null);
+          }
+
+          const emailTarget = app.email || 'ứng viên';
+          this.toast.success(
+            'Lên lịch & Gửi email thành công',
+            `Đã lên lịch phỏng vấn và gửi email thư mời đến ${emailTarget} (kèm CC cho Người phỏng vấn & HR)!`
+          );
+          this.fetchBackendApplications();
+        },
+        error: (err) => {
+          this.isSendingInterview.set(false);
+          const msg = err?.error?.message || 'Có lỗi xảy ra khi lên lịch phỏng vấn.';
+          this.toast.error('Lên lịch thất bại', msg);
+        }
+      });
+    } else {
+      setTimeout(() => {
+        this.isSendingInterview.set(false);
+        this.showInterviewModal.set(false);
+        this.applications.update(list =>
+          list.map(item => item.applicationId === app.applicationId ? { ...item, status: 'ScheduledInterview' } : item)
+        );
+        if (this.selectedApp()?.applicationId === app.applicationId) {
+          this.selectedApp.update(curr => curr ? { ...curr, status: 'ScheduledInterview' } : null);
+        }
+        this.toast.success(
+          'Lên lịch thành công',
+          `Đã xếp lịch phỏng vấn và gửi email mời ${app.candidateName} (${app.email || 'ứng viên'}).`
+        );
       }, 400);
     }
   }
@@ -832,6 +1287,12 @@ export class ApplicationsManagementComponent implements OnInit {
     event?: Event
   ): void {
     if (event) event.stopPropagation();
+
+    // Nếu chọn Xếp lịch phỏng vấn -> Mở Modal Lên Lịch Phỏng Vấn (có check ngày nghỉ lễ, cuối tuần, giờ hành chính & gửi mail)
+    if (targetStatus === 'ScheduledInterview') {
+      this.openInterviewModal(app, event);
+      return;
+    }
 
     const statusLabels: Record<string, string> = {
       SentToManager: 'Chuyển Quản đốc xưởng duyệt',

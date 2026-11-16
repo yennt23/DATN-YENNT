@@ -28,4 +28,14 @@ public class ScheduleInterviewDto
 
     [StringLength(300, ErrorMessage = "Địa điểm không được vượt quá 300 ký tự")]
     public string? Location { get; set; }
+
+    /// <summary>
+    /// Nội dung email phỏng vấn tùy chỉnh đã được HR xem trước và chỉnh sửa
+    /// </summary>
+    public string? CustomEmailBody { get; set; }
+
+    /// <summary>
+    /// Email của ứng viên được chỉ định trực tiếp từ màn hình xếp lịch
+    /// </summary>
+    public string? CandidateEmail { get; set; }
 }

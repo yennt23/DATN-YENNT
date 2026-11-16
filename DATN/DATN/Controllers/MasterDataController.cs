@@ -113,15 +113,56 @@ namespace DATN.Controllers
         [HttpGet("vietnam-holidays/{year}")]
         public IActionResult GetVietnamHolidays(int year)
         {
-            var holidays = new[]
+            // Danh sách ngày lễ chính thức của Việt Nam theo định dạng DD-MM
+            string[] holidays;
+            switch (year)
             {
-                "01-01", // Tết Dương Lịch
-                "17-02", "18-02", "19-02", "20-02", "21-02", "22-02", "23-02", // Tết Nguyên Đán
-                "30-04", // Ngày Giải phóng
-                "01-05", // Quốc tế Lao động
-                "02-09"  // Quốc khánh
-            };
-            return Ok(new { year, holidays });
+                case 2025:
+                    holidays = new[]
+                    {
+                        "01-01", // Tết Dương Lịch
+                        "25-01", "26-01", "27-01", "28-01", "29-01", "30-01", "31-01", "01-02", "02-02", // Tết Nguyên Đán Ất Tỵ
+                        "07-04", // Giỗ Tổ Hùng Vương (10/3 Âm lịch)
+                        "30-04", // Ngày Giải phóng miền Nam
+                        "01-05", "02-05", // Quốc tế Lao động và nghỉ bù
+                        "01-09", "02-09", "03-09" // Quốc khánh
+                    };
+                    break;
+                case 2026:
+                    holidays = new[]
+                    {
+                        "01-01", "02-01", // Tết Dương Lịch
+                        "15-02", "16-02", "17-02", "18-02", "19-02", "20-02", "21-02", "22-02", "23-02", // Tết Bính Ngọ
+                        "26-04", // Giỗ Tổ Hùng Vương (10/3 Âm lịch)
+                        "30-04", // Ngày Giải phóng
+                        "01-05", // Quốc tế Lao động
+                        "01-09", "02-09", "03-09" // Quốc khánh
+                    };
+                    break;
+                case 2027:
+                    holidays = new[]
+                    {
+                        "01-01", // Tết Dương Lịch
+                        "05-02", "06-02", "07-02", "08-02", "09-02", "10-02", "11-02", "12-02", // Tết Đinh Mùi
+                        "15-04", // Giỗ Tổ Hùng Vương
+                        "30-04", // Ngày Giải phóng
+                        "01-05", // Quốc tế Lao động
+                        "01-09", "02-09", "03-09" // Quốc khánh
+                    };
+                    break;
+                default:
+                    holidays = new[]
+                    {
+                        "01-01", // Tết Dương Lịch
+                        "17-02", "18-02", "19-02", "20-02", "21-02", "22-02", "23-02", // Tết Nguyên Đán
+                        "30-04", // Ngày Giải phóng
+                        "01-05", // Quốc tế Lao động
+                        "02-09", "03-09" // Quốc khánh
+                    };
+                    break;
+            }
+
+            return Ok(new { year, count = holidays.Length, holidays });
         }
     }
 }

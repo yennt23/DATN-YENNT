@@ -561,8 +561,7 @@ public partial class DATNContext : DbContext
             entity.Property(e => e.Headline).HasMaxLength(300);
             entity.Property(e => e.Location).HasMaxLength(200);
             entity.Property(e => e.NormalizedEmail)
-                .HasMaxLength(320)
-                .HasComputedColumnSql("(upper(ltrim(rtrim([Email]))))", true);
+                .HasMaxLength(320);
             entity.Property(e => e.Phone).HasMaxLength(50);
             entity.Property(e => e.Source).HasMaxLength(100);
         });
@@ -1193,8 +1192,7 @@ public partial class DATNContext : DbContext
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.HasQueryFilter(u => u.IsActive);
             entity.Property(e => e.NormalizedEmail)
-                .HasMaxLength(320)
-                .HasComputedColumnSql("(upper(ltrim(rtrim([Email]))))", true);
+                .HasMaxLength(320);
             entity.Property(e => e.PasswordHash)
                 .IsRequired()
                 .HasMaxLength(500);

@@ -166,6 +166,14 @@ public class EmailService : IEmailService
         {
             _logger.LogError(smtpEx, "❌ Lỗi SMTP khi gửi email đến: {ToEmail}. StatusCode: {StatusCode}, Error: {Message}", 
                 toEmail, smtpEx.StatusCode, smtpEx.Message);
+
+            // FALLBACK AN TOÀN: Nếu lỗi do người nhận trong CC không hợp lệ, thử gửi trực tiếp cho toEmail
+            if (ccEmails != null && ccEmails.Count > 0)
+            {
+                _logger.LogInformation("🔄 Đang thử gửi lại trực tiếp cho {ToEmail} (loại bỏ CC)...", toEmail);
+                await SendEmailAsync(toEmail, subject, body);
+                return;
+            }
             throw;
         }
         catch (Exception ex)
