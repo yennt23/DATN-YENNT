@@ -375,6 +375,7 @@ public class ApplicationService : IApplicationService
                             Provider = "LOCAL",
                             OriginalFileName = request.CVFile.FileName,
                             StoredFileName = newFileName,
+                            FileName = request.CVFile.FileName,
                             MimeType = mimeType,
                             SizeBytes = request.CVFile.Length,
                             Sha256 = fileSha256,

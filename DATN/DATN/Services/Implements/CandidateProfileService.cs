@@ -348,6 +348,7 @@ namespace DATN.Services.Implements
                 Provider = "LOCAL",
                 OriginalFileName = file.FileName,
                 StoredFileName = fileName,
+                FileName = file.FileName,
                 MimeType = file.ContentType,
                 SizeBytes = file.Length,
                 Sha256 = sha256,
@@ -355,8 +356,6 @@ namespace DATN.Services.Implements
                 LocalPath = filePath,
                 CreatedAt = DateTime.UtcNow
             };
-
-            _context.Files.Add(fileEntity);
 
             _context.Files.Add(fileEntity);
 

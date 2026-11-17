@@ -15,6 +15,8 @@ public partial class File
 
     public string StoredFileName { get; set; }
 
+    public string FileName { get; set; }
+
     public string MimeType { get; set; }
 
     public long? SizeBytes { get; set; }

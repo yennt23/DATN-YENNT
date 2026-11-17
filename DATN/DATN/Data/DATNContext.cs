@@ -824,6 +824,7 @@ public partial class DATNContext : DbContext
             entity.Property(e => e.StoredFileName)
                 .IsRequired()
                 .HasMaxLength(260);
+            entity.Property(e => e.FileName).HasMaxLength(260).IsRequired(false);
             entity.Property(e => e.Url).HasMaxLength(1000);
         });
 
