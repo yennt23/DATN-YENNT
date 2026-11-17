@@ -249,7 +249,9 @@
     <app-campaign-qr-modal
         [campaign]="campaignQr"
         [regenerating]="regeneratingQr"
+        (campaignChange)="onCampaignQrUpdated($event)"
         (closed)="closeCampaignQr()"
-        (regenerate)="regenerateCampaignQr()">
+        (regenerate)="regenerateCampaignQr()"
+        (synced)="loadJobs()">
     </app-campaign-qr-modal>
 </div>

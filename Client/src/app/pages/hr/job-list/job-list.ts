@@ -141,6 +141,11 @@ export class JobListComponent implements OnInit {
         this.campaignQr = null;
     }
 
+    onCampaignQrUpdated(updated: CampaignQrDto): void {
+        this.campaignQr = { ...updated };
+        this.cdr.detectChanges();
+    }
+
     regenerateCampaignQr(): void {
         const id = this.campaignQr?.jobId;
         if (!id) return;

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output, OnChanges, SimpleChanges, inject } from '@angular/core';
+import { Component, EventEmitter, Input, Output, OnChanges, SimpleChanges, inject, ChangeDetectorRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CampaignQrDto, JobService } from '../../../services/job.service';
 import { ApplicationService } from '../../../services/application.service';
@@ -14,6 +14,7 @@ import { ToastService } from '../../../services/toast.service';
 export class CampaignQrModalComponent implements OnChanges {
   @Input() campaign: CampaignQrDto | null = null;
   @Input() regenerating = false;
+  @Output() campaignChange = new EventEmitter<CampaignQrDto>();
   @Output() closed = new EventEmitter<void>();
   @Output() regenerate = new EventEmitter<void>();
   @Output() synced = new EventEmitter<void>();
@@ -21,6 +22,7 @@ export class CampaignQrModalComponent implements OnChanges {
   private jobService = inject(JobService);
   private applicationService = inject(ApplicationService);
   private toast = inject(ToastService);
+  private cdr = inject(ChangeDetectorRef);
 
   activeTab: 'qr' | 'sheet-sync' = 'qr';
 
@@ -69,6 +71,7 @@ export class CampaignQrModalComponent implements OnChanges {
       this.ngrokClientUrl = this.campaign.publicClientBaseUrl || '';
       const url = (this.campaign.formUrl || '').trim();
       this.customFormUrl = url && !url.includes('/apply/') ? url : '';
+      this.cdr.detectChanges();
     }
   }
 
@@ -78,7 +81,8 @@ export class CampaignQrModalComponent implements OnChanges {
 
   get hasValidQr(): boolean {
     const url = (this.campaign?.formUrl || '').trim();
-    return !!url && !url.includes('/apply/') && !!this.campaign?.qrCodeDataUrl;
+    const hasQr = !!this.campaign?.qrCodeDataUrl || !!this.campaign?.qrCodePath;
+    return !!url && !url.includes('/apply/') && hasQr;
   }
 
   copyLink(): void {
@@ -86,7 +90,11 @@ export class CampaignQrModalComponent implements OnChanges {
     if (!url) return;
     navigator.clipboard.writeText(url).then(() => {
       this.copied = true;
-      setTimeout(() => (this.copied = false), 1600);
+      this.cdr.detectChanges();
+      setTimeout(() => {
+        this.copied = false;
+        this.cdr.detectChanges();
+      }, 1600);
       this.toast.success('Đã copy', 'Đã copy link form ứng tuyển.');
     });
   }
@@ -96,7 +104,11 @@ export class CampaignQrModalComponent implements OnChanges {
     if (!url) return;
     navigator.clipboard.writeText(url).then(() => {
       this.copiedWebhook = true;
-      setTimeout(() => (this.copiedWebhook = false), 1600);
+      this.cdr.detectChanges();
+      setTimeout(() => {
+        this.copiedWebhook = false;
+        this.cdr.detectChanges();
+      }, 1600);
       this.toast.success('Đã copy', 'Đã copy Webhook URL.');
     });
   }
@@ -106,16 +118,21 @@ export class CampaignQrModalComponent implements OnChanges {
     if (!secret) return;
     navigator.clipboard.writeText(secret).then(() => {
       this.copiedSecret = true;
-      setTimeout(() => (this.copiedSecret = false), 1600);
+      this.cdr.detectChanges();
+      setTimeout(() => {
+        this.copiedSecret = false;
+        this.cdr.detectChanges();
+      }, 1600);
       this.toast.success('Đã copy', 'Đã copy Secret Token.');
     });
   }
 
   downloadQr(): void {
-    if (!this.campaign?.qrCodeDataUrl) return;
+    const qrSrc = this.campaign?.qrCodeDataUrl || this.campaign?.qrCodePath;
+    if (!qrSrc) return;
     const a = document.createElement('a');
-    a.href = this.campaign.qrCodeDataUrl;
-    a.download = `qr-chien-dich-${this.campaign.jobId}.png`;
+    a.href = qrSrc;
+    a.download = `qr-chien-dich-${this.campaign?.jobId}.png`;
     a.click();
   }
 
@@ -123,7 +140,11 @@ export class CampaignQrModalComponent implements OnChanges {
     if (!this.campaign?.appsScript) return;
     navigator.clipboard.writeText(this.campaign.appsScript).then(() => {
       this.copiedScript = true;
-      setTimeout(() => (this.copiedScript = false), 1600);
+      this.cdr.detectChanges();
+      setTimeout(() => {
+        this.copiedScript = false;
+        this.cdr.detectChanges();
+      }, 1600);
       this.toast.success('Đã copy', 'Đã copy mã Google Apps Script.');
     });
   }
@@ -131,16 +152,28 @@ export class CampaignQrModalComponent implements OnChanges {
   // 1. Cập nhật link Form tùy chọn (Dán Google Form có sẵn của HR)
   saveCustomFormUrl(): void {
     if (!this.campaign?.jobId) return;
+    const trimmed = (this.customFormUrl || '').trim();
+    if (!trimmed) {
+      this.toast.warning('Thiếu đường link', 'Vui lòng dán link Google Form vào ô bên trên.');
+      return;
+    }
 
     this.isSavingCustomForm = true;
-    this.jobService.updateCustomFormUrl(this.campaign.jobId, this.customFormUrl.trim()).subscribe({
+    this.cdr.detectChanges();
+
+    this.jobService.updateCustomFormUrl(this.campaign.jobId, trimmed).subscribe({
       next: (updated) => {
-        this.campaign = updated;
+        this.campaign = { ...updated };
+        this.customFormUrl = (updated.formUrl || trimmed).trim();
         this.isSavingCustomForm = false;
-        this.toast.success('Thành công', 'Đã cập nhật link form và sinh lại mã QR!');
+        this.campaignChange.emit(this.campaign);
+        this.synced.emit();
+        this.cdr.detectChanges();
+        this.toast.success('Thành công', 'Đã cập nhật link Google Form và tạo mã QR thành công!');
       },
       error: (err) => {
         this.isSavingCustomForm = false;
+        this.cdr.detectChanges();
         this.toast.error('Lỗi', err.error?.message || 'Không thể cập nhật link form.');
       }
     });
@@ -150,14 +183,20 @@ export class CampaignQrModalComponent implements OnChanges {
     if (!this.campaign?.jobId) return;
     this.customFormUrl = '';
     this.isSavingCustomForm = true;
+    this.cdr.detectChanges();
+
     this.jobService.updateCustomFormUrl(this.campaign.jobId, '').subscribe({
       next: (updated) => {
-        this.campaign = updated;
+        this.campaign = { ...updated };
         this.isSavingCustomForm = false;
+        this.campaignChange.emit(this.campaign);
+        this.synced.emit();
+        this.cdr.detectChanges();
         this.toast.success('Thành công', 'Đã chuyển về sử dụng Form ứng tuyển nội bộ ATS.');
       },
       error: (err) => {
         this.isSavingCustomForm = false;
+        this.cdr.detectChanges();
         this.toast.error('Lỗi', err.error?.message || 'Không thể chuyển form.');
       }
     });
@@ -172,19 +211,24 @@ export class CampaignQrModalComponent implements OnChanges {
     }
 
     this.isApplyingNgrok = true;
+    this.cdr.detectChanges();
     const cleanApi = this.ngrokApiUrl.trim().replace(/\/$/, '');
     const cleanClient = this.ngrokClientUrl.trim() ? this.ngrokClientUrl.trim().replace(/\/$/, '') : undefined;
 
     this.jobService.ensureCampaignQr(this.campaign.jobId, false, cleanApi, cleanClient).subscribe({
       next: (updated) => {
-        this.campaign = updated;
+        this.campaign = { ...updated };
         this.ngrokApiUrl = updated.publicApiBaseUrl || cleanApi;
         this.ngrokClientUrl = updated.publicClientBaseUrl || (cleanClient ?? '');
         this.isApplyingNgrok = false;
+        this.campaignChange.emit(this.campaign);
+        this.synced.emit();
+        this.cdr.detectChanges();
         this.toast.success('Thành công', 'Đã cập nhật ngrok URL và tạo lại Apps Script + Webhook!');
       },
       error: (err) => {
         this.isApplyingNgrok = false;
+        this.cdr.detectChanges();
         this.toast.error('Lỗi', err.error?.message || 'Không thể cập nhật cấu hình ngrok.');
       }
     });
@@ -204,6 +248,7 @@ export class CampaignQrModalComponent implements OnChanges {
     }
 
     this.isLoadingColumns = true;
+    this.cdr.detectChanges();
     this.applicationService.previewGoogleSheets(this.sheetUrl.trim()).subscribe({
       next: (res) => {
         this.isLoadingColumns = false;
@@ -221,10 +266,12 @@ export class CampaignQrModalComponent implements OnChanges {
           yearOfBirthColumn: suggested.yearOfBirthColumn || ''
         };
         this.showColumnConfig = true;
+        this.cdr.detectChanges();
         this.toast.success('Đã đọc cấu trúc Sheet', `Tìm thấy ${this.sheetHeaders.length} cột và ${this.sheetTotalRows} dòng dữ liệu.`);
       },
       error: (err) => {
         this.isLoadingColumns = false;
+        this.cdr.detectChanges();
         this.toast.error('Lỗi đọc Google Sheet', err.error?.message || 'Không thể đọc danh sách cột từ Google Sheet.');
       }
     });
@@ -247,17 +294,20 @@ export class CampaignQrModalComponent implements OnChanges {
 
     this.isSyncingSheet = true;
     this.syncResult = null;
+    this.cdr.detectChanges();
     const mappingPayload = this.showColumnConfig ? this.columnMapping : undefined;
 
     this.applicationService.syncGoogleSheets(this.campaign.jobId, this.sheetUrl.trim(), mappingPayload).subscribe({
       next: (res) => {
         this.isSyncingSheet = false;
         this.syncResult = res.data;
-        this.toast.success('Đồng bộ thành công', res.message || 'Đã kéo dữ liệu ứng viên về hệ thống.');
         this.synced.emit();
+        this.cdr.detectChanges();
+        this.toast.success('Đồng bộ thành công', res.message || 'Đã kéo dữ liệu ứng viên về hệ thống.');
       },
       error: (err) => {
         this.isSyncingSheet = false;
+        this.cdr.detectChanges();
         this.toast.error('Đồng bộ thất bại', err.error?.message || 'Không thể đọc dữ liệu từ Google Sheet. Hãy kiểm tra quyền truy cập file.');
       }
     });
@@ -269,6 +319,7 @@ export class CampaignQrModalComponent implements OnChanges {
 
     this.isTestingWebhook = true;
     this.testResult = null;
+    this.cdr.detectChanges();
 
     const payload = {
       jobId: this.campaign.jobId,
@@ -285,14 +336,15 @@ export class CampaignQrModalComponent implements OnChanges {
       next: (res) => {
         this.isTestingWebhook = false;
         this.testResult = res;
-        this.toast.success('Test thành công', 'Webhook đã nhận và tạo ứng viên thành công trong ATS!');
-        // Đổi SĐT test cho lần sau
         this.testPhone = '0988' + Math.floor(100000 + Math.random() * 900000);
         this.synced.emit();
+        this.cdr.detectChanges();
+        this.toast.success('Test thành công', 'Webhook đã nhận và tạo ứng viên thành công trong ATS!');
       },
       error: (err) => {
         this.isTestingWebhook = false;
         this.testResult = { success: false, message: err.error?.message || 'Lỗi khi gửi webhook test.' };
+        this.cdr.detectChanges();
         this.toast.error('Test thất bại', err.error?.message || 'Webhook từ chối request.');
       }
     });
