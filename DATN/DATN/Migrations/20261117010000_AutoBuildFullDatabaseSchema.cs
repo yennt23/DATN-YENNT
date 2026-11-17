@@ -477,14 +477,19 @@ END;
 -- =========================================================================================
 -- 13. ĐỒNG BỘ SỐ LƯỢNG TRÚNG TUYỂN THỰC TẾ
 -- =========================================================================================
-UPDATE j
-SET j.HiredCount = ISNULL((
-    SELECT COUNT(1)
-    FROM dbo.Applications a
-    WHERE a.JobId = j.JobId
-      AND (a.Status = 'Hired' OR a.ConvertedEmployeeCode IS NOT NULL)
-), 0)
-FROM dbo.Jobs j;
+IF COL_LENGTH('dbo.Jobs', 'HiredCount') IS NOT NULL
+BEGIN
+    EXEC('
+        UPDATE j
+        SET j.HiredCount = ISNULL((
+            SELECT COUNT(1)
+            FROM dbo.Applications a
+            WHERE a.JobId = j.JobId
+              AND (a.Status = ''Hired'' OR (COL_LENGTH(''dbo.Applications'', ''ConvertedEmployeeCode'') IS NOT NULL AND a.ConvertedEmployeeCode IS NOT NULL))
+        ), 0)
+        FROM dbo.Jobs j;
+    ');
+END;
 ");
         }
 

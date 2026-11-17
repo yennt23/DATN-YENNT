@@ -39,12 +39,16 @@ namespace DATN.Data
 
         public static async Task InitializeAsync(DATNContext context)
         {
+            // 1. Tự động kiểm tra và build / cập nhật toàn bộ database schema (tạo bảng, thêm cột còn thiếu)
+            Console.WriteLine("[DbInitializer] Đang kiểm tra và tự động cập nhật Schema Database (Tables & Columns)...");
+            await EnsureFullIndustrialSchemaAsync(context);
+
             try
             {
-                // 1. Đồng bộ cấu hình __EFMigrationsHistory cho database legacy nếu có
+                // 2. Đồng bộ cấu hình __EFMigrationsHistory cho database legacy nếu có
                 await EnsureMigrationsHistoryConfiguredAsync(context);
 
-                // 2. Tự động áp dụng EF Core Migrations khi Restart Backend
+                // 3. Tự động áp dụng EF Core Migrations khi Restart Backend
                 Console.WriteLine("[DbInitializer] Đang kiểm tra và tự động áp dụng EF Core Migrations...");
                 await context.Database.MigrateAsync();
                 Console.WriteLine("[DbInitializer] ✓ EF Core Migrations đã được áp dụng thành công!");
@@ -54,7 +58,10 @@ namespace DATN.Data
                 Console.WriteLine($"[DbInitializer] MigrateAsync warning: {migEx.Message}");
             }
 
-            // 3. Seed dữ liệu mặc định chuẩn bằng EF Core C# (Departments, Jobs, Skills, Users...)
+            // Đảm bảo lại một lần nữa sau migration để chắc chắn 100% không cột nào bị sót
+            await EnsureFullIndustrialSchemaAsync(context);
+
+            // 4. Seed dữ liệu mặc định chuẩn bằng EF Core C# (Departments, Jobs, Skills, Users...)
             await SeedDepartmentsAsync(context);
             await SeedJobTypesAsync(context);
             await SeedSkillsAsync(context);
@@ -64,6 +71,298 @@ namespace DATN.Data
             await SeedChatbotFaqsAsync(context);
 
             _isInitialized = true;
+        }
+
+        /// <summary>
+        /// Tự động kiểm tra và build / cập nhật toàn bộ cấu trúc Database (Tables, Columns, Constraints)
+        /// Chạy an toàn độc lập từng khối, đảm bảo mọi bảng/cột cần thiết luôn sẵn sàng khi BE restart.
+        /// </summary>
+        private static async Task EnsureFullIndustrialSchemaAsync(DATNContext context)
+        {
+            var schemaScripts = new List<(string Name, string Sql)>
+            {
+                ("Drop old check constraints", @"
+                    DECLARE @dropCheckSql NVARCHAR(MAX) = N'';
+                    SELECT @dropCheckSql = @dropCheckSql + N'ALTER TABLE ' + QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + N'.' + QUOTENAME(OBJECT_NAME(parent_object_id)) + N' DROP CONSTRAINT ' + QUOTENAME(name) + N';' + CHAR(13)
+                    FROM sys.check_constraints
+                    WHERE parent_object_id IN (
+                        OBJECT_ID('dbo.Applications'),
+                        OBJECT_ID('dbo.Candidates'),
+                        OBJECT_ID('dbo.Jobs'),
+                        OBJECT_ID('dbo.Interviews'),
+                        OBJECT_ID('dbo.PipelineStages'),
+                        OBJECT_ID('dbo.ApplicationNotes'),
+                        OBJECT_ID('dbo.ApplicationStageHistory'),
+                        OBJECT_ID('dbo.InterviewBatches')
+                    );
+                    IF LEN(@dropCheckSql) > 0 EXEC sp_executesql @dropCheckSql;
+                "),
+                ("InterviewBatches table and columns", @"
+                    IF OBJECT_ID('dbo.InterviewBatches', 'U') IS NULL
+                    BEGIN
+                        CREATE TABLE dbo.InterviewBatches
+                        (
+                            Id                INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_InterviewBatches PRIMARY KEY,
+                            JobId             UNIQUEIDENTIFIER  NULL,
+                            BatchCode         NVARCHAR(50)      NOT NULL,
+                            ScheduledDate     DATE              NULL,
+                            ShiftSlot         NVARCHAR(30)      NULL CONSTRAINT DF_InterviewBatches_ShiftSlot DEFAULT ('MORNING_08_11'),
+                            ShiftName         NVARCHAR(100)     NULL CONSTRAINT DF_InterviewBatches_ShiftName DEFAULT (N'Ca phỏng vấn tập trung'),
+                            LocationRoom      NVARCHAR(200)     NULL CONSTRAINT DF_InterviewBatches_LocationRoom DEFAULT (N'Hội trường tuyển dụng A'),
+                            MaxCapacity       INT               NULL CONSTRAINT DF_InterviewBatches_MaxCapacity DEFAULT (50),
+                            CurrentCount      INT               NULL CONSTRAINT DF_InterviewBatches_CurrentCount DEFAULT (0),
+                            InterviewerUserId UNIQUEIDENTIFIER  NULL,
+                            Status            NVARCHAR(30)      NULL CONSTRAINT DF_InterviewBatches_Status DEFAULT ('Open'),
+                            CreatedAt         DATETIME2         NULL CONSTRAINT DF_InterviewBatches_CreatedAt DEFAULT (SYSUTCDATETIME())
+                        );
+                    END
+                    ELSE
+                    BEGIN
+                        IF COL_LENGTH('dbo.InterviewBatches', 'JobId') IS NULL ALTER TABLE dbo.InterviewBatches ADD JobId UNIQUEIDENTIFIER NULL;
+                        IF COL_LENGTH('dbo.InterviewBatches', 'BatchCode') IS NULL ALTER TABLE dbo.InterviewBatches ADD BatchCode NVARCHAR(50) NULL;
+                        IF COL_LENGTH('dbo.InterviewBatches', 'ScheduledDate') IS NULL ALTER TABLE dbo.InterviewBatches ADD ScheduledDate DATE NULL;
+                        IF COL_LENGTH('dbo.InterviewBatches', 'ShiftSlot') IS NULL ALTER TABLE dbo.InterviewBatches ADD ShiftSlot NVARCHAR(30) NULL;
+                        IF COL_LENGTH('dbo.InterviewBatches', 'ShiftName') IS NULL ALTER TABLE dbo.InterviewBatches ADD ShiftName NVARCHAR(100) NULL;
+                        IF COL_LENGTH('dbo.InterviewBatches', 'LocationRoom') IS NULL ALTER TABLE dbo.InterviewBatches ADD LocationRoom NVARCHAR(200) NULL;
+                        IF COL_LENGTH('dbo.InterviewBatches', 'MaxCapacity') IS NULL ALTER TABLE dbo.InterviewBatches ADD MaxCapacity INT NULL;
+                        IF COL_LENGTH('dbo.InterviewBatches', 'CurrentCount') IS NULL ALTER TABLE dbo.InterviewBatches ADD CurrentCount INT NULL;
+                        IF COL_LENGTH('dbo.InterviewBatches', 'InterviewerUserId') IS NULL ALTER TABLE dbo.InterviewBatches ADD InterviewerUserId UNIQUEIDENTIFIER NULL;
+                        IF COL_LENGTH('dbo.InterviewBatches', 'Status') IS NULL ALTER TABLE dbo.InterviewBatches ADD Status NVARCHAR(30) NULL;
+                        IF COL_LENGTH('dbo.InterviewBatches', 'CreatedAt') IS NULL ALTER TABLE dbo.InterviewBatches ADD CreatedAt DATETIME2 NULL;
+
+                        -- Đổi cột thành NULL để EF Core mapping không bị SqlNullValueException
+                        ALTER TABLE dbo.InterviewBatches ALTER COLUMN ScheduledDate DATE NULL;
+                        ALTER TABLE dbo.InterviewBatches ALTER COLUMN ShiftSlot NVARCHAR(30) NULL;
+                        ALTER TABLE dbo.InterviewBatches ALTER COLUMN MaxCapacity INT NULL;
+                        ALTER TABLE dbo.InterviewBatches ALTER COLUMN CurrentCount INT NULL;
+                        ALTER TABLE dbo.InterviewBatches ALTER COLUMN Status NVARCHAR(30) NULL;
+
+                        IF COL_LENGTH('dbo.InterviewBatches', 'InterviewerId') IS NOT NULL
+                            EXEC('UPDATE dbo.InterviewBatches SET InterviewerUserId = InterviewerId WHERE InterviewerUserId IS NULL');
+                        IF COL_LENGTH('dbo.InterviewBatches', 'CurrentEnrolled') IS NOT NULL
+                            EXEC('UPDATE dbo.InterviewBatches SET CurrentCount = CurrentEnrolled WHERE CurrentCount IS NULL OR CurrentCount = 0');
+
+                        EXEC('UPDATE dbo.InterviewBatches SET ShiftSlot = ''MORNING_08_11'' WHERE ShiftSlot IS NULL');
+                        EXEC('UPDATE dbo.InterviewBatches SET ShiftName = N''Ca phỏng vấn tập trung'' WHERE ShiftName IS NULL');
+                        EXEC('UPDATE dbo.InterviewBatches SET LocationRoom = N''Hội trường tuyển dụng A'' WHERE LocationRoom IS NULL');
+                        EXEC('UPDATE dbo.InterviewBatches SET MaxCapacity = 50 WHERE MaxCapacity IS NULL');
+                        EXEC('UPDATE dbo.InterviewBatches SET CurrentCount = 0 WHERE CurrentCount IS NULL');
+                        EXEC('UPDATE dbo.InterviewBatches SET Status = ''Open'' WHERE Status IS NULL');
+                        EXEC('UPDATE dbo.InterviewBatches SET CreatedAt = SYSUTCDATETIME() WHERE CreatedAt IS NULL');
+                    END;
+                "),
+                ("CandidateBlacklists table and columns", @"
+                    IF OBJECT_ID('dbo.CandidateBlacklists', 'U') IS NULL
+                    BEGIN
+                        CREATE TABLE dbo.CandidateBlacklists
+                        (
+                            Id              INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_CandidateBlacklists PRIMARY KEY,
+                            CitizenId       NVARCHAR(20)      NULL,
+                            PhoneNormalized NVARCHAR(20)      NULL,
+                            FullName        NVARCHAR(150)     NOT NULL,
+                            Reason          NVARCHAR(500)     NOT NULL,
+                            BanType         NVARCHAR(50)      NOT NULL CONSTRAINT DF_CandidateBlacklists_BanType DEFAULT ('PERMANENT'),
+                            BannedUntil     DATETIME2         NULL,
+                            CreatedBy       NVARCHAR(100)     NULL,
+                            CreatedAt       DATETIME2         NOT NULL CONSTRAINT DF_CandidateBlacklists_CreatedAt DEFAULT (SYSUTCDATETIME())
+                        );
+                        CREATE INDEX IX_CandidateBlacklists_CitizenId ON dbo.CandidateBlacklists(CitizenId) WHERE CitizenId IS NOT NULL;
+                        CREATE INDEX IX_CandidateBlacklists_PhoneNormalized ON dbo.CandidateBlacklists(PhoneNormalized) WHERE PhoneNormalized IS NOT NULL;
+                    END
+                    ELSE
+                    BEGIN
+                        IF COL_LENGTH('dbo.CandidateBlacklists', 'CitizenId') IS NULL ALTER TABLE dbo.CandidateBlacklists ADD CitizenId NVARCHAR(20) NULL;
+                        IF COL_LENGTH('dbo.CandidateBlacklists', 'PhoneNormalized') IS NULL ALTER TABLE dbo.CandidateBlacklists ADD PhoneNormalized NVARCHAR(20) NULL;
+                        IF COL_LENGTH('dbo.CandidateBlacklists', 'BanType') IS NULL ALTER TABLE dbo.CandidateBlacklists ADD BanType NVARCHAR(50) NOT NULL CONSTRAINT DF_CandidateBlacklists_BanType_Sync DEFAULT ('PERMANENT');
+                        IF COL_LENGTH('dbo.CandidateBlacklists', 'BannedUntil') IS NULL ALTER TABLE dbo.CandidateBlacklists ADD BannedUntil DATETIME2 NULL;
+                        IF COL_LENGTH('dbo.CandidateBlacklists', 'CreatedBy') IS NULL ALTER TABLE dbo.CandidateBlacklists ADD CreatedBy NVARCHAR(100) NULL;
+                        IF COL_LENGTH('dbo.CandidateBlacklists', 'CreatedAt') IS NULL ALTER TABLE dbo.CandidateBlacklists ADD CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_CandidateBlacklists_CreatedAt_Sync DEFAULT (SYSUTCDATETIME());
+                    END;
+                "),
+                ("ExEmployees table and columns", @"
+                    IF OBJECT_ID('dbo.ExEmployees', 'U') IS NULL
+                    BEGIN
+                        CREATE TABLE dbo.ExEmployees
+                        (
+                            Id                  INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_ExEmployees PRIMARY KEY,
+                            EmployeeCode        NVARCHAR(50)      NOT NULL,
+                            CitizenId           NVARCHAR(20)      NULL,
+                            PhoneNormalized     NVARCHAR(20)      NULL,
+                            FullName            NVARCHAR(150)     NOT NULL,
+                            DepartmentName      NVARCHAR(100)     NULL,
+                            ResignedDate        DATE              NULL,
+                            ResignationReason   NVARCHAR(255)     NULL,
+                            IsEligibleForRehire BIT               NOT NULL CONSTRAINT DF_ExEmployees_IsEligibleForRehire DEFAULT (1),
+                            CreatedAt           DATETIME2         NOT NULL CONSTRAINT DF_ExEmployees_CreatedAt DEFAULT (SYSUTCDATETIME())
+                        );
+                    END
+                    ELSE
+                    BEGIN
+                        IF COL_LENGTH('dbo.ExEmployees', 'CitizenId') IS NULL ALTER TABLE dbo.ExEmployees ADD CitizenId NVARCHAR(20) NULL;
+                        IF COL_LENGTH('dbo.ExEmployees', 'PhoneNormalized') IS NULL ALTER TABLE dbo.ExEmployees ADD PhoneNormalized NVARCHAR(20) NULL;
+                        IF COL_LENGTH('dbo.ExEmployees', 'DepartmentName') IS NULL ALTER TABLE dbo.ExEmployees ADD DepartmentName NVARCHAR(100) NULL;
+                        IF COL_LENGTH('dbo.ExEmployees', 'ResignedDate') IS NULL ALTER TABLE dbo.ExEmployees ADD ResignedDate DATE NULL;
+                        IF COL_LENGTH('dbo.ExEmployees', 'ResignationReason') IS NULL ALTER TABLE dbo.ExEmployees ADD ResignationReason NVARCHAR(255) NULL;
+                        IF COL_LENGTH('dbo.ExEmployees', 'IsEligibleForRehire') IS NULL ALTER TABLE dbo.ExEmployees ADD IsEligibleForRehire BIT NOT NULL CONSTRAINT DF_ExEmployees_IsEligible_Sync DEFAULT (1);
+                        IF COL_LENGTH('dbo.ExEmployees', 'CreatedAt') IS NULL ALTER TABLE dbo.ExEmployees ADD CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_ExEmployees_CreatedAt_Sync DEFAULT (SYSUTCDATETIME());
+                    END;
+                "),
+                ("Departments table", @"
+                    IF OBJECT_ID('dbo.Departments', 'U') IS NULL
+                    BEGIN
+                        CREATE TABLE dbo.Departments
+                        (
+                            DepartmentId   UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Departments PRIMARY KEY DEFAULT (NEWID()),
+                            DepartmentCode NVARCHAR(50)     NOT NULL,
+                            DepartmentName NVARCHAR(200)    NOT NULL,
+                            Description    NVARCHAR(500)    NULL,
+                            IsActive       BIT              NOT NULL CONSTRAINT DF_Departments_IsActive DEFAULT (1),
+                            CreatedAt      DATETIME2        NOT NULL CONSTRAINT DF_Departments_CreatedAt DEFAULT (SYSUTCDATETIME()),
+                            UpdatedAt      DATETIME2        NULL
+                        );
+                    END;
+                "),
+                ("Files table and columns", @"
+                    IF OBJECT_ID('dbo.Files', 'U') IS NOT NULL
+                    BEGIN
+                        IF COL_LENGTH('dbo.Files', 'FileName') IS NULL
+                        BEGIN
+                            ALTER TABLE dbo.Files ADD FileName NVARCHAR(260) NULL;
+                        END
+                        ELSE
+                        BEGIN
+                            ALTER TABLE dbo.Files ALTER COLUMN FileName NVARCHAR(260) NULL;
+                        END;
+                        IF COL_LENGTH('dbo.Files', 'Provider') IS NULL ALTER TABLE dbo.Files ADD Provider NVARCHAR(50) NOT NULL CONSTRAINT DF_Files_Provider_Sync DEFAULT ('LOCAL');
+                        IF COL_LENGTH('dbo.Files', 'OriginalFileName') IS NULL ALTER TABLE dbo.Files ADD OriginalFileName NVARCHAR(255) NOT NULL CONSTRAINT DF_Files_OriginalFileName_Sync DEFAULT ('cv.pdf');
+                        IF COL_LENGTH('dbo.Files', 'StoredFileName') IS NULL ALTER TABLE dbo.Files ADD StoredFileName NVARCHAR(255) NOT NULL CONSTRAINT DF_Files_StoredFileName_Sync DEFAULT ('cv.pdf');
+                        IF COL_LENGTH('dbo.Files', 'SizeBytes') IS NULL ALTER TABLE dbo.Files ADD SizeBytes BIGINT NOT NULL CONSTRAINT DF_Files_SizeBytes_Sync DEFAULT (0);
+                        IF COL_LENGTH('dbo.Files', 'Sha256') IS NULL ALTER TABLE dbo.Files ADD Sha256 CHAR(64) NULL;
+                        IF COL_LENGTH('dbo.Files', 'Url') IS NULL ALTER TABLE dbo.Files ADD Url NVARCHAR(1000) NOT NULL CONSTRAINT DF_Files_Url_Sync DEFAULT ('');
+                        EXEC('UPDATE dbo.Files SET FileName = ISNULL(OriginalFileName, ISNULL(StoredFileName, ''file'')) WHERE FileName IS NULL');
+                    END;
+                "),
+                ("Applications columns", @"
+                    IF OBJECT_ID('dbo.Applications', 'U') IS NOT NULL
+                    BEGIN
+                        IF COL_LENGTH('dbo.Applications', 'InterviewBatchId') IS NULL ALTER TABLE dbo.Applications ADD InterviewBatchId INT NULL;
+                        IF COL_LENGTH('dbo.Applications', 'CitizenId') IS NULL ALTER TABLE dbo.Applications ADD CitizenId NVARCHAR(20) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'PhoneNormalized') IS NULL ALTER TABLE dbo.Applications ADD PhoneNormalized NVARCHAR(20) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'ConvertedEmployeeCode') IS NULL ALTER TABLE dbo.Applications ADD ConvertedEmployeeCode NVARCHAR(50) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'OfferStatus') IS NULL ALTER TABLE dbo.Applications ADD OfferStatus NVARCHAR(30) NOT NULL CONSTRAINT DF_Apps_OfferStatus DEFAULT ('Not_Required');
+                        IF COL_LENGTH('dbo.Applications', 'OfferedSalary') IS NULL ALTER TABLE dbo.Applications ADD OfferedSalary DECIMAL(18,2) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'OfferResponseNote') IS NULL ALTER TABLE dbo.Applications ADD OfferResponseNote NVARCHAR(500) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'OfferExpiresAt') IS NULL ALTER TABLE dbo.Applications ADD OfferExpiresAt DATETIME2 NULL;
+                        IF COL_LENGTH('dbo.Applications', 'IsInTalentPool') IS NULL ALTER TABLE dbo.Applications ADD IsInTalentPool BIT NOT NULL CONSTRAINT DF_Apps_IsInTalentPool DEFAULT (0);
+                        IF COL_LENGTH('dbo.Applications', 'IsExEmployeeRehire') IS NULL ALTER TABLE dbo.Applications ADD IsExEmployeeRehire BIT NOT NULL CONSTRAINT DF_Apps_IsExEmployeeRehire DEFAULT (0);
+                        IF COL_LENGTH('dbo.Applications', 'PreviousEmployeeCode') IS NULL ALTER TABLE dbo.Applications ADD PreviousEmployeeCode NVARCHAR(50) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'Probation30DayStatus') IS NULL ALTER TABLE dbo.Applications ADD Probation30DayStatus NVARCHAR(30) NULL DEFAULT ('Not_Started');
+                        IF COL_LENGTH('dbo.Applications', 'MedicalCheckStatus') IS NULL ALTER TABLE dbo.Applications ADD MedicalCheckStatus NVARCHAR(30) NOT NULL CONSTRAINT DF_Apps_MedicalCheckStatus DEFAULT ('Pending');
+                        IF COL_LENGTH('dbo.Applications', 'BankAccountNumber') IS NULL ALTER TABLE dbo.Applications ADD BankAccountNumber NVARCHAR(50) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'BankName') IS NULL ALTER TABLE dbo.Applications ADD BankName NVARCHAR(100) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'OnboardingDocsCompleted') IS NULL ALTER TABLE dbo.Applications ADD OnboardingDocsCompleted BIT NOT NULL CONSTRAINT DF_Apps_OnboardingDocsCompleted DEFAULT (0);
+                        IF COL_LENGTH('dbo.Applications', 'SlaDeadlineAt') IS NULL ALTER TABLE dbo.Applications ADD SlaDeadlineAt DATETIME2 NULL;
+                        IF COL_LENGTH('dbo.Applications', 'IsSlaEscalated') IS NULL ALTER TABLE dbo.Applications ADD IsSlaEscalated BIT NOT NULL CONSTRAINT DF_Apps_IsSlaEscalated DEFAULT (0);
+                        IF COL_LENGTH('dbo.Applications', 'SlaOverrideReason') IS NULL ALTER TABLE dbo.Applications ADD SlaOverrideReason NVARCHAR(500) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'ContactName') IS NULL ALTER TABLE dbo.Applications ADD ContactName NVARCHAR(200) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'ContactEmail') IS NULL ALTER TABLE dbo.Applications ADD ContactEmail NVARCHAR(320) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'ContactPhone') IS NULL ALTER TABLE dbo.Applications ADD ContactPhone NVARCHAR(50) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'CvFileUrl') IS NULL ALTER TABLE dbo.Applications ADD CvFileUrl NVARCHAR(500) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'DateOfBirth') IS NULL ALTER TABLE dbo.Applications ADD DateOfBirth DATE NULL;
+                        IF COL_LENGTH('dbo.Applications', 'ApplicationSource') IS NULL ALTER TABLE dbo.Applications ADD ApplicationSource NVARCHAR(30) NOT NULL CONSTRAINT DF_Apps_AppSource DEFAULT ('PDF_UPLOAD');
+                        IF COL_LENGTH('dbo.Applications', 'ScoringMethod') IS NULL ALTER TABLE dbo.Applications ADD ScoringMethod NVARCHAR(30) NOT NULL CONSTRAINT DF_Apps_ScoringMethod DEFAULT ('GEMINI_AI');
+                        IF COL_LENGTH('dbo.Applications', 'DuplicateCount') IS NULL ALTER TABLE dbo.Applications ADD DuplicateCount INT NOT NULL CONSTRAINT DF_Apps_DuplicateCount DEFAULT (1);
+                        IF COL_LENGTH('dbo.Applications', 'PreviousApplicationId') IS NULL ALTER TABLE dbo.Applications ADD PreviousApplicationId INT NULL;
+                        IF COL_LENGTH('dbo.Applications', 'IsBlacklisted') IS NULL ALTER TABLE dbo.Applications ADD IsBlacklisted BIT NOT NULL CONSTRAINT DF_Apps_IsBlacklisted DEFAULT (0);
+                        IF COL_LENGTH('dbo.Applications', 'BlacklistWarningNote') IS NULL ALTER TABLE dbo.Applications ADD BlacklistWarningNote NVARCHAR(500) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'IsScannedOrUnparseablePdf') IS NULL ALTER TABLE dbo.Applications ADD IsScannedOrUnparseablePdf BIT NOT NULL CONSTRAINT DF_Apps_IsScanned DEFAULT (0);
+                        IF COL_LENGTH('dbo.Applications', 'RawResumeText') IS NULL ALTER TABLE dbo.Applications ADD RawResumeText NVARCHAR(MAX) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'AiAnalysisSummary') IS NULL ALTER TABLE dbo.Applications ADD AiAnalysisSummary NVARCHAR(MAX) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'AppliedScoringVersion') IS NULL ALTER TABLE dbo.Applications ADD AppliedScoringVersion INT NULL DEFAULT (1);
+                        IF COL_LENGTH('dbo.Applications', 'AppliedScoringConfigJson') IS NULL ALTER TABLE dbo.Applications ADD AppliedScoringConfigJson NVARCHAR(MAX) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'OralInterviewChecklistJson') IS NULL ALTER TABLE dbo.Applications ADD OralInterviewChecklistJson NVARCHAR(MAX) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'InterviewScore') IS NULL ALTER TABLE dbo.Applications ADD InterviewScore DECIMAL(5,2) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'IsAiOverriddenByHuman') IS NULL ALTER TABLE dbo.Applications ADD IsAiOverriddenByHuman BIT NOT NULL CONSTRAINT DF_Apps_IsAiOverridden DEFAULT (0);
+                        IF COL_LENGTH('dbo.Applications', 'AiOverrideReason') IS NULL ALTER TABLE dbo.Applications ADD AiOverrideReason NVARCHAR(500) NULL;
+                        IF COL_LENGTH('dbo.Applications', 'InterviewRescheduleCount') IS NULL ALTER TABLE dbo.Applications ADD InterviewRescheduleCount INT NOT NULL CONSTRAINT DF_Apps_RescheduleCount DEFAULT (0);
+                    END;
+                "),
+                ("Jobs columns", @"
+                    IF OBJECT_ID('dbo.Jobs', 'U') IS NOT NULL
+                    BEGIN
+                        IF COL_LENGTH('dbo.Jobs', 'DepartmentId') IS NULL ALTER TABLE dbo.Jobs ADD DepartmentId UNIQUEIDENTIFIER NULL;
+                        IF COL_LENGTH('dbo.Jobs', 'CampaignCode') IS NULL ALTER TABLE dbo.Jobs ADD CampaignCode NVARCHAR(50) NULL;
+                        IF COL_LENGTH('dbo.Jobs', 'GoogleFormUrl') IS NULL ALTER TABLE dbo.Jobs ADD GoogleFormUrl NVARCHAR(500) NULL;
+                        IF COL_LENGTH('dbo.Jobs', 'GoogleFormPublicUrl') IS NULL ALTER TABLE dbo.Jobs ADD GoogleFormPublicUrl NVARCHAR(1000) NULL;
+                        IF COL_LENGTH('dbo.Jobs', 'GoogleFormEditUrl') IS NULL ALTER TABLE dbo.Jobs ADD GoogleFormEditUrl NVARCHAR(1000) NULL;
+                        IF COL_LENGTH('dbo.Jobs', 'GoogleFormId') IS NULL ALTER TABLE dbo.Jobs ADD GoogleFormId NVARCHAR(128) NULL;
+                        IF COL_LENGTH('dbo.Jobs', 'GoogleSheetUrl') IS NULL ALTER TABLE dbo.Jobs ADD GoogleSheetUrl NVARCHAR(500) NULL;
+                        IF COL_LENGTH('dbo.Jobs', 'GoogleFormSyncCount') IS NULL ALTER TABLE dbo.Jobs ADD GoogleFormSyncCount INT NOT NULL CONSTRAINT DF_Jobs_SyncCount DEFAULT (0);
+                        IF COL_LENGTH('dbo.Jobs', 'QrCodeImagePath') IS NULL ALTER TABLE dbo.Jobs ADD QrCodeImagePath NVARCHAR(500) NULL;
+                        IF COL_LENGTH('dbo.Jobs', 'RecruitmentTrack') IS NULL ALTER TABLE dbo.Jobs ADD RecruitmentTrack NVARCHAR(30) NOT NULL CONSTRAINT DF_Jobs_RecruitTrack DEFAULT ('PROFESSIONAL');
+                        IF COL_LENGTH('dbo.Jobs', 'TargetQuantity') IS NULL ALTER TABLE dbo.Jobs ADD TargetQuantity INT NOT NULL CONSTRAINT DF_Jobs_TargetQty DEFAULT (50);
+                        IF COL_LENGTH('dbo.Jobs', 'HiredCount') IS NULL ALTER TABLE dbo.Jobs ADD HiredCount INT NOT NULL CONSTRAINT DF_Jobs_HiredCount DEFAULT (0);
+                        IF COL_LENGTH('dbo.Jobs', 'WaitlistBufferPercent') IS NULL ALTER TABLE dbo.Jobs ADD WaitlistBufferPercent INT NOT NULL CONSTRAINT DF_Jobs_WaitlistBuffer DEFAULT (15);
+                        IF COL_LENGTH('dbo.Jobs', 'CurrentScoringWeightVersion') IS NULL ALTER TABLE dbo.Jobs ADD CurrentScoringWeightVersion INT NOT NULL CONSTRAINT DF_Jobs_ScoringWeightVer DEFAULT (1);
+                        IF COL_LENGTH('dbo.Jobs', 'RequisitionStatus') IS NULL ALTER TABLE dbo.Jobs ADD RequisitionStatus NVARCHAR(30) NOT NULL CONSTRAINT DF_Jobs_RequisitionStatus DEFAULT ('Approved');
+                        IF COL_LENGTH('dbo.Jobs', 'RequireNightShift') IS NULL ALTER TABLE dbo.Jobs ADD RequireNightShift BIT NOT NULL CONSTRAINT DF_Jobs_RequireNightShift DEFAULT (0);
+                    END;
+                "),
+                ("Users columns", @"
+                    IF OBJECT_ID('dbo.Users', 'U') IS NOT NULL
+                    BEGIN
+                        IF COL_LENGTH('dbo.Users', 'NormalizedEmail') IS NULL ALTER TABLE dbo.Users ADD NormalizedEmail NVARCHAR(320) NULL;
+                        IF COL_LENGTH('dbo.Users', 'AvatarUrl') IS NULL ALTER TABLE dbo.Users ADD AvatarUrl NVARCHAR(500) NULL;
+                        IF COL_LENGTH('dbo.Users', 'AuthProvider') IS NULL ALTER TABLE dbo.Users ADD AuthProvider NVARCHAR(50) NULL DEFAULT ('LOCAL');
+                        IF COL_LENGTH('dbo.Users', 'DepartmentId') IS NULL ALTER TABLE dbo.Users ADD DepartmentId UNIQUEIDENTIFIER NULL;
+                        IF COL_LENGTH('dbo.Users', 'ManagerId') IS NULL ALTER TABLE dbo.Users ADD ManagerId UNIQUEIDENTIFIER NULL;
+                        IF COL_LENGTH('dbo.Users', 'LockedAt') IS NULL ALTER TABLE dbo.Users ADD LockedAt DATETIME2 NULL;
+                        IF COL_LENGTH('dbo.Users', 'LockedById') IS NULL ALTER TABLE dbo.Users ADD LockedById UNIQUEIDENTIFIER NULL;
+                        IF COL_LENGTH('dbo.Users', 'LockedByName') IS NULL ALTER TABLE dbo.Users ADD LockedByName NVARCHAR(255) NULL;
+                        IF COL_LENGTH('dbo.Users', 'LockReason') IS NULL ALTER TABLE dbo.Users ADD LockReason NVARCHAR(500) NULL;
+                        IF COL_LENGTH('dbo.Users', 'IsActive') IS NOT NULL
+                            EXEC('UPDATE dbo.Users SET IsActive = 1 WHERE IsActive IS NULL');
+                    END;
+                "),
+                ("PipelineStages and SlaStageConfiguration", @"
+                    IF OBJECT_ID('dbo.PipelineStages', 'U') IS NOT NULL
+                    BEGIN
+                        IF COL_LENGTH('dbo.PipelineStages', 'IsSlaEnabled') IS NULL ALTER TABLE dbo.PipelineStages ADD IsSlaEnabled BIT NOT NULL CONSTRAINT DF_PipelineStages_IsSlaEnabled DEFAULT (1);
+                        IF COL_LENGTH('dbo.PipelineStages', 'SlaMaxDays') IS NULL ALTER TABLE dbo.PipelineStages ADD SlaMaxDays INT NULL DEFAULT (3);
+                        IF COL_LENGTH('dbo.PipelineStages', 'SlaWarnBeforeDays') IS NULL ALTER TABLE dbo.PipelineStages ADD SlaWarnBeforeDays INT NULL DEFAULT (1);
+                    END;
+
+                    IF OBJECT_ID('dbo.SlaStageConfiguration', 'U') IS NULL
+                    BEGIN
+                        CREATE TABLE dbo.SlaStageConfiguration
+                        (
+                            SlaStageConfigId  UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_SlaStageConfiguration PRIMARY KEY DEFAULT NEWID(),
+                            StageCode         NVARCHAR(100)    NOT NULL CONSTRAINT UQ_SlaStageConfiguration_StageCode UNIQUE,
+                            StageName         NVARCHAR(200)    NOT NULL,
+                            SlaMaxDays        INT              NOT NULL CONSTRAINT DF_SlaStageConfig_SlaMaxDays DEFAULT 7,
+                            SlaWarnBeforeDays INT              NOT NULL CONSTRAINT DF_SlaStageConfig_SlaWarnBeforeDays DEFAULT 2,
+                            IsActive          BIT              NOT NULL CONSTRAINT DF_SlaStageConfig_IsActive DEFAULT 1,
+                            OrderSequence     INT              NOT NULL CONSTRAINT DF_SlaStageConfig_OrderSequence DEFAULT 0,
+                            CreatedAt         DATETIME2        NOT NULL CONSTRAINT DF_SlaStageConfig_CreatedAt DEFAULT SYSUTCDATETIME(),
+                            UpdatedAt         DATETIME2        NULL,
+                            CreatedBy         UNIQUEIDENTIFIER NULL
+                        );
+                    END;
+                ")
+            };
+
+            foreach (var (name, sql) in schemaScripts)
+            {
+                try
+                {
+                    await context.Database.ExecuteSqlRawAsync(sql);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[DbInitializer] Schema sync warning on [{name}]: {ex.Message}");
+                }
+            }
+            Console.WriteLine("[DbInitializer] ✓ Kiểm tra và đồng bộ Schema Database hoàn tất!");
         }
 
         private static async Task EnsureMigrationsHistoryConfiguredAsync(DATNContext context)

@@ -220,11 +220,27 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
             var isMorning = currentShift.Contains("MORNING");
             var shiftCode = isMorning ? "SANG" : "CHIEU";
             var shiftDisplayName = isMorning ? "Ca Sáng (08:00 - 11:30)" : "Ca Chiều (13:30 - 17:00)";
-            var batchCode = $"BATCH-{jobPrefix}-{currentDate:yyyyMMdd}-{shiftCode}-{i + 1:D2}";
+            var timestampSuffix = DateTime.UtcNow.ToString("HHmmss");
+            var batchCode = $"BATCH-{jobPrefix}-{currentDate:yyyyMMdd}-{shiftCode}-{timestampSuffix}-{i + 1:D2}";
+
+            // Kiểm tra JobId và InterviewerUserId hợp lệ để tránh vi phạm Foreign Key
+            Guid? validJobId = request.JobId != Guid.Empty ? request.JobId : (Guid?)null;
+            if (validJobId.HasValue)
+            {
+                var jobExists = await _context.Jobs.AnyAsync(j => j.JobId == validJobId.Value);
+                if (!jobExists) validJobId = null;
+            }
+
+            Guid? validInterviewerId = request.InterviewerUserId != Guid.Empty ? request.InterviewerUserId : (Guid?)null;
+            if (validInterviewerId.HasValue)
+            {
+                var userExists = await _context.Users.IgnoreQueryFilters().AnyAsync(u => u.UserId == validInterviewerId.Value);
+                if (!userExists) validInterviewerId = null;
+            }
 
             var batch = new InterviewBatch
             {
-                JobId = request.JobId,
+                JobId = validJobId,
                 BatchCode = batchCode,
                 ScheduledDate = currentDate,
                 ShiftSlot = currentShift,
@@ -232,13 +248,28 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
                 LocationRoom = "Hội trường tuyển dụng A",
                 MaxCapacity = capacity,
                 CurrentCount = chunk.Length,
-                InterviewerUserId = request.InterviewerUserId != Guid.Empty ? request.InterviewerUserId : null,
+                InterviewerUserId = validInterviewerId,
                 Status = "Open",
                 CreatedAt = DateTime.UtcNow
             };
 
-            _context.InterviewBatches.Add(batch);
-            await _context.SaveChangesAsync(); // Lưu để lấy BatchId
+            try
+            {
+                _context.InterviewBatches.Add(batch);
+                try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException dbEx)
+        {
+            _logger.LogError(dbEx, "Lỗi khi cập nhật trạng thái phỏng vấn của các ứng viên: {Detail}", dbEx.InnerException?.Message ?? dbEx.Message);
+        } // Lưu để lấy BatchId
+            }
+            catch (DbUpdateException dbEx)
+            {
+                _logger.LogError(dbEx, "Lỗi khi lưu InterviewBatch: {Detail}", dbEx.InnerException?.Message ?? dbEx.Message);
+                throw new InvalidOperationException($"Lỗi cơ sở dữ liệu khi lưu ca phỏng vấn: {dbEx.InnerException?.Message ?? dbEx.Message}");
+            }
 
             // 3. Gán Application vào Batch và cập nhật Interview entity
             var interviewTime = currentShift.Contains("MORNING")
@@ -319,7 +350,14 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
             }
         }
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException dbEx)
+        {
+            _logger.LogError(dbEx, "Lỗi khi cập nhật trạng thái phỏng vấn của các ứng viên: {Detail}", dbEx.InnerException?.Message ?? dbEx.Message);
+        }
 
         _logger.LogInformation("✅ Hoàn tất xếp ca phỏng vấn: Đã tạo {BatchesCount} ca cho {TotalCandidates} ứng viên (JobId: {JobId})",
             batchesCreated.Count, totalCandidates, request.JobId);
@@ -352,7 +390,14 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
         {
             application.Status = "Rejected_Exceed_Reschedule";
             application.InterviewBatchId = null;
+            try
+        {
             await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException dbEx)
+        {
+            _logger.LogError(dbEx, "Lỗi khi cập nhật trạng thái phỏng vấn của các ứng viên: {Detail}", dbEx.InnerException?.Message ?? dbEx.Message);
+        }
 
             _logger.LogWarning("❌ Ứng viên {ApplicationId} dời lịch {Count} lần (> 2 lần). Hệ thống tự động từ chối hồ sơ (Rejected_Exceed_Reschedule).",
                 applicationId, application.InterviewRescheduleCount);
@@ -391,7 +436,14 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
         }
 
         application.Status = "Interview_Scheduled";
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException dbEx)
+        {
+            _logger.LogError(dbEx, "Lỗi khi cập nhật trạng thái phỏng vấn của các ứng viên: {Detail}", dbEx.InnerException?.Message ?? dbEx.Message);
+        }
 
         _logger.LogInformation("ℹ️ Dời lịch phỏng vấn cho {ApplicationId} thành công (Lần {Count}/2). Ngày mới: {Date}",
             applicationId, application.InterviewRescheduleCount, interviewTime);
@@ -427,7 +479,14 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
             expiredIds.Add(app.ApplicationId);
         }
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException dbEx)
+        {
+            _logger.LogError(dbEx, "Lỗi khi cập nhật trạng thái phỏng vấn của các ứng viên: {Detail}", dbEx.InnerException?.Message ?? dbEx.Message);
+        }
 
         _logger.LogInformation("⏰ Đã quét và cập nhật hết hạn Offer 72h cho {Count} hồ sơ ứng viên.", expiredApps.Count);
 
@@ -473,7 +532,14 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
             app.Status = "Saved_In_Talent_Pool";
         }
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException dbEx)
+        {
+            _logger.LogError(dbEx, "Lỗi khi cập nhật trạng thái phỏng vấn của các ứng viên: {Detail}", dbEx.InnerException?.Message ?? dbEx.Message);
+        }
 
         _logger.LogInformation("🔒 Chiến dịch {JobTitle} đã đủ chỉ tiêu ({Hired}/{Target}). Đã đóng và bảo lưu {PoolCount} hồ sơ vào Talent Pool.",
             job.Title, job.HiredCount, target, poolApps.Count);
@@ -504,7 +570,14 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
         }
 
         application.Probation30DayStatus = request.ProbationStatus;
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException dbEx)
+        {
+            _logger.LogError(dbEx, "Lỗi khi cập nhật trạng thái phỏng vấn của các ứng viên: {Detail}", dbEx.InnerException?.Message ?? dbEx.Message);
+        }
 
         // Tính toán tỷ lệ thành công thử việc thực tế của vị trí tuyển dụng này
         decimal? accuracyRate = null;
@@ -594,7 +667,14 @@ public class HrOperationsBusinessService : IHrOperationsBusinessService
                 try
                 {
                     _context.InterviewBatches.AddRange(initialBatches);
-                    await _context.SaveChangesAsync();
+                    try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException dbEx)
+        {
+            _logger.LogError(dbEx, "Lỗi khi cập nhật trạng thái phỏng vấn của các ứng viên: {Detail}", dbEx.InnerException?.Message ?? dbEx.Message);
+        }
                     batches = initialBatches;
                 }
                 catch (Exception addEx)
