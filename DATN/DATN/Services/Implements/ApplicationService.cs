@@ -142,7 +142,7 @@ public class ApplicationService : IApplicationService
             CandidateId = a.CandidateId,
             Status = a.Status,
             AppliedAt = a.AppliedAt,
-            CvUrl = a.CvFileUrl ?? (a.ResumeDocument != null && a.ResumeDocument.File != null ? a.ResumeDocument.File.Url : "") ?? "",
+            CvUrl = a.CvFileUrl ?? (a.ResumeDocument != null && a.ResumeDocument.File != null ? (a.ResumeDocument.File.Url ?? a.ResumeDocument.File.LocalPath) : "") ?? "",
             CandidateName = a.ContactName ?? (a.Candidate != null ? a.Candidate.FullName : "Ứng viên"),
             Email = a.ContactEmail ?? (a.Candidate != null ? a.Candidate.Email : ""),
             Phone = a.PhoneNormalized ?? a.ContactPhone ?? (a.Candidate != null ? a.Candidate.Phone : ""),
@@ -164,7 +164,29 @@ public class ApplicationService : IApplicationService
                 (a.CurrentStage.SlaWarnBeforeDays.HasValue && DateTime.UtcNow > a.LastStageChangedAt.AddDays(a.CurrentStage.SlaMaxDays.Value - a.CurrentStage.SlaWarnBeforeDays.Value) ? "WARNING" : "ON_TRACK")),
             JobStatus = a.Job.Status,
             JobNumberOfPositions = a.Job.NumberOfPositions,
-            JobTotalHired = a.Job.Applications.Count(app => app.Status == "HIRED")
+            JobTotalHired = a.Job.Applications.Count(app => app.Status == "HIRED"),
+
+            // Industrial Extensions đầy đủ cho UI Quản Lý Hồ Sơ
+            RecruitmentTrack = a.Job.RecruitmentTrack ?? "PROFESSIONAL",
+            ApplicationSource = a.ApplicationSource ?? (a.Source == "CAREER_SITE" ? "PDF_UPLOAD" : a.Source),
+            ScoringMethod = a.ScoringMethod ?? (a.Job.RecruitmentTrack == "MASS_LABOR" ? "RULE_ENGINE" : "GEMINI_AI"),
+            CvFileUrl = a.CvFileUrl ?? (a.ResumeDocument != null && a.ResumeDocument.File != null ? (a.ResumeDocument.File.Url ?? a.ResumeDocument.File.LocalPath) : null),
+            DepartmentId = a.Job.DepartmentId,
+            DepartmentName = a.Job.DepartmentNavigation != null ? a.Job.DepartmentNavigation.DepartmentName : a.Job.Department,
+            DepartmentCode = a.Job.DepartmentNavigation != null ? a.Job.DepartmentNavigation.DepartmentCode : "PROD_LINE",
+            CitizenId = a.CitizenId,
+            PhoneNormalized = a.PhoneNormalized ?? a.ContactPhone ?? (a.Candidate != null ? a.Candidate.Phone : null),
+            DuplicateCount = a.DuplicateCount,
+            IsBlacklisted = a.IsBlacklisted,
+            BlacklistWarningNote = a.BlacklistWarningNote,
+            IsScannedOrUnparseablePdf = a.IsScannedOrUnparseablePdf,
+            RawResumeText = a.RawResumeText ?? (a.Candidate != null ? a.Candidate.Summary : null),
+            AiAnalysisSummary = a.AiAnalysisSummary,
+            OralInterviewChecklistJson = a.OralInterviewChecklistJson,
+            MedicalCheckStatus = a.MedicalCheckStatus,
+            DateOfBirth = a.DateOfBirth,
+            IsInTalentPool = a.IsInTalentPool,
+            InterviewBatchId = a.InterviewBatchId
         });
     }
 
@@ -296,11 +318,11 @@ public class ApplicationService : IApplicationService
                         candidate = await _context.Candidates.FirstOrDefaultAsync(c => c.UserId == userId.Value)
                             ?? throw new ArgumentException("Candidate profile không tồn tại");
 
-                        // Kh�ng c?p nh?t th�ng tin h? so ch�nh c?a ?ng vi�n khi n?p don
-                        // candidate.FullName = request.FullName?.Trim() ?? candidate.FullName;
-                        // candidate.Email = request.Email?.Trim() ?? candidate.Email;
-                        // candidate.Phone = request.Phone?.Trim() ?? candidate.Phone;
-                        // candidate.UpdatedAt = DateTime.UtcNow;
+                        // Cập nhật thông tin liên hệ mới nhất của ứng viên nếu có
+                        if (!string.IsNullOrWhiteSpace(request.FullName)) candidate.FullName = request.FullName.Trim();
+                        if (!string.IsNullOrWhiteSpace(request.Phone)) candidate.Phone = request.Phone.Trim();
+                        if (!string.IsNullOrWhiteSpace(request.Email)) candidate.Email = request.Email.Trim();
+                        candidate.UpdatedAt = DateTime.UtcNow;
                     }
                     else
                     {
@@ -420,7 +442,12 @@ public class ApplicationService : IApplicationService
                         throw new InvalidOperationException("Không tìm thấy PipelineStage trong hệ thống");
                     }
 
-                    // Tạo Application
+                    // Xác định đường dẫn file CV đã lưu
+                    var finalCvUrl = !string.IsNullOrWhiteSpace(candidateDocument.File?.Url) 
+                        ? candidateDocument.File.Url 
+                        : $"/uploads/cvs/{newFileName}";
+
+                    // Tạo Application với đầy đủ thông tin nguồn nộp, file CV và phương thức chấm điểm
                     var application = new Entities.Application
                     {
                         ApplicationId = Guid.NewGuid(),
@@ -432,14 +459,18 @@ public class ApplicationService : IApplicationService
                         Status = "ACTIVE",
                         AppliedAt = DateTime.UtcNow,
                         LastStageChangedAt = DateTime.UtcNow,
-                        ContactName = request.FullName?.Trim(),
-                        ContactEmail = request.Email?.Trim(),
-                        ContactPhone = request.Phone?.Trim()
+                        ContactName = request.FullName?.Trim() ?? candidate.FullName,
+                        ContactEmail = request.Email?.Trim() ?? candidate.Email,
+                        ContactPhone = request.Phone?.Trim() ?? candidate.Phone,
+                        PhoneNormalized = request.Phone?.Trim() ?? candidate.Phone,
+                        ApplicationSource = "PDF_UPLOAD",
+                        ScoringMethod = (job.RecruitmentTrack == "MASS_LABOR" ? "RULE_ENGINE" : "GEMINI_AI"),
+                        CvFileUrl = finalCvUrl
                     };
 
                     _context.Applications.Add(application);
                     await _context.SaveChangesAsync();
-                    _logger.LogInformation("Đã tạo Application: {ApplicationId}", application.ApplicationId);
+                    _logger.LogInformation("Đã tạo Application: {ApplicationId} với CvFileUrl: {CvUrl}", application.ApplicationId, finalCvUrl);
 
                     // ===== 7 BUSINESS RULES GUARD (Logic 1, 2, 3) =====
                     // Logic 1: Chuẩn hóa SĐT/CCCD, chặn Blacklist, chống nộp trùng 60 ngày
@@ -454,8 +485,9 @@ public class ApplicationService : IApplicationService
                         // Logic 3: Snapshot phiên bản trọng số AI
                         _workflowGuard.ApplyScoreVersionSnapshot(application, job);
                     }
+                    application.CvFileUrl = finalCvUrl;
                     application.ApplicationSource = "PDF_UPLOAD";
-                    application.ScoringMethod = "GEMINI_AI";
+                    application.ScoringMethod = (job.RecruitmentTrack == "MASS_LABOR" ? "RULE_ENGINE" : "GEMINI_AI");
                     await _context.SaveChangesAsync();
                     // ===== END 7 BUSINESS RULES GUARD =====
 
@@ -886,13 +918,21 @@ public class ApplicationService : IApplicationService
 
         var applications = await _context.Applications
             .Include(a => a.Job)
+                .ThenInclude(j => j.DepartmentNavigation)
+            .Include(a => a.ResumeDocument)
+                .ThenInclude(rd => rd.File)
             .Where(a => a.CandidateId == candidate.CandidateId)
+            .OrderByDescending(a => a.AppliedAt)
             .Select(a => new MyApplicationDto
             {
                 ApplicationId = a.ApplicationId,
+                JobId = a.JobId,
                 JobTitle = a.Job.Title,
+                CompanyName = a.Job.DepartmentNavigation != null ? a.Job.DepartmentNavigation.DepartmentName : "Nhà máy KCN",
+                JobLocation = a.Job.Location ?? "Bắc Ninh",
                 Status = a.Status,
-                AppliedAt = a.AppliedAt
+                AppliedAt = a.AppliedAt,
+                CvUrl = a.CvFileUrl ?? (a.ResumeDocument != null && a.ResumeDocument.File != null ? (a.ResumeDocument.File.Url ?? a.ResumeDocument.File.LocalPath) : null)
             })
             .ToListAsync();
 
@@ -914,7 +954,10 @@ public class ApplicationService : IApplicationService
         var query = _context.Applications
             .Include(a => a.Candidate)
             .Include(a => a.Job)
+                .ThenInclude(j => j.DepartmentNavigation)
             .Include(a => a.CurrentStage)
+            .Include(a => a.ResumeDocument)
+                .ThenInclude(rd => rd.File)
             .Include(a => a.ApplicationAiScores)
             .Where(a => !a.Job.IsDeleted)
             .OrderByDescending(a => a.AppliedAt);

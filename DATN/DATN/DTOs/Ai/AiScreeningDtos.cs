@@ -31,6 +31,7 @@ public class CandidateScreeningResultDto
 public class ForwardToManagerRequestDto
 {
     public List<string> CandidateIds { get; set; } = new();
+    public List<CandidateScreeningResultDto>? Candidates { get; set; }
     public Guid JobId { get; set; }
     public string DepartmentCode { get; set; } = "";
     public string Note { get; set; } = "";

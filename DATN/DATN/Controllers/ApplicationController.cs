@@ -366,6 +366,8 @@ public class ApplicationController : ControllerBase
                 .Include(a => a.Job)
                     .ThenInclude(j => j.DepartmentNavigation)
                 .Include(a => a.Candidate)
+                .Include(a => a.ResumeDocument)
+                    .ThenInclude(rd => rd.File)
                 .Where(a => ids.Contains(a.ApplicationId))
                 .Select(a => new
                 {
@@ -374,6 +376,12 @@ public class ApplicationController : ControllerBase
                     a.ApplicationSource,
                     a.ScoringMethod,
                     a.CvFileUrl,
+                    a.ContactName,
+                    a.ContactEmail,
+                    a.ContactPhone,
+                    CandidateFullName = a.Candidate != null ? a.Candidate.FullName : null,
+                    CandidateEmail = a.Candidate != null ? a.Candidate.Email : null,
+                    CandidatePhone = a.Candidate != null ? a.Candidate.Phone : null,
                     a.RawResumeText,
                     a.OralInterviewChecklistJson,
                     a.CitizenId,
@@ -393,7 +401,7 @@ public class ApplicationController : ControllerBase
                     a.IsSlaEscalated,
                     a.SlaOverrideReason,
                     a.ResumeDocumentId,
-                    ResumeFileUrl = a.ResumeDocument != null && a.ResumeDocument.File != null ? (a.ResumeDocument.File.Url ?? a.ResumeDocument.File.LocalPath) : null,
+                    ResumeFileUrl = a.CvFileUrl ?? (a.ResumeDocument != null && a.ResumeDocument.File != null ? (a.ResumeDocument.File.Url ?? a.ResumeDocument.File.LocalPath) : null),
                     CandidateSummary = a.Candidate != null ? a.Candidate.Summary : null,
                     JobDepartmentId = a.Job.DepartmentId,
                     JobDepartmentName = a.Job.DepartmentNavigation != null ? a.Job.DepartmentNavigation.DepartmentName : a.Job.Department,
@@ -441,8 +449,9 @@ public class ApplicationController : ControllerBase
                 if (!enrichMeta.TryGetValue(app.ApplicationId, out var m)) continue;
                 var resolvedSource = !string.IsNullOrWhiteSpace(m.ApplicationSource)
                     ? m.ApplicationSource
-                    : (m.Source != null && m.Source.Contains("GOOGLE") ? "GOOGLE_FORM_QR"
-                        : (m.Source == "WALK_IN" ? "WALK_IN" : (!string.IsNullOrWhiteSpace(app.CvUrl) || m.ResumeDocumentId != null ? "PDF_UPLOAD" : "GOOGLE_FORM_QR")));
+                    : (m.Source == "CAREER_SITE" ? "PDF_UPLOAD"
+                        : (m.Source != null && m.Source.Contains("GOOGLE") ? "GOOGLE_FORM_QR"
+                        : (m.Source == "WALK_IN" ? "WALK_IN" : (!string.IsNullOrWhiteSpace(app.CvUrl) || m.ResumeDocumentId != null ? "PDF_UPLOAD" : "GOOGLE_FORM_QR"))));
 
                 app.ApplicationSource = resolvedSource;
                 app.RecruitmentTrack = !string.IsNullOrWhiteSpace(m.JobRecruitmentTrack)
@@ -450,13 +459,21 @@ public class ApplicationController : ControllerBase
                     : (resolvedSource == "PDF_UPLOAD" ? "PROFESSIONAL" : "MASS_LABOR");
                 app.ScoringMethod = !string.IsNullOrWhiteSpace(m.ScoringMethod)
                     ? m.ScoringMethod
-                    : (resolvedSource == "PDF_UPLOAD" ? "GEMINI_AI" : "RULE_ENGINE");
+                    : (app.RecruitmentTrack == "PROFESSIONAL" ? "GEMINI_AI" : "RULE_ENGINE");
                 app.CvFileUrl = !string.IsNullOrWhiteSpace(m.CvFileUrl) ? m.CvFileUrl : (!string.IsNullOrWhiteSpace(app.CvUrl) ? app.CvUrl : m.ResumeFileUrl);
+                app.CvUrl = app.CvFileUrl ?? app.CvUrl;
                 app.RawResumeText = !string.IsNullOrWhiteSpace(m.RawResumeText) ? m.RawResumeText : m.CandidateSummary;
                 app.OralInterviewChecklistJson = m.OralInterviewChecklistJson;
                 app.DepartmentId = m.JobDepartmentId;
                 app.DepartmentName = m.JobDepartmentName;
                 app.DepartmentCode = m.JobDepartmentCode;
+
+                if (string.IsNullOrWhiteSpace(app.CandidateName) || app.CandidateName == "Ứng viên")
+                    app.CandidateName = !string.IsNullOrWhiteSpace(m.ContactName) ? m.ContactName : (!string.IsNullOrWhiteSpace(m.CandidateFullName) ? m.CandidateFullName : "Ứng viên");
+                if (string.IsNullOrWhiteSpace(app.Email))
+                    app.Email = !string.IsNullOrWhiteSpace(m.ContactEmail) ? m.ContactEmail : (m.CandidateEmail ?? "");
+                if (string.IsNullOrWhiteSpace(app.Phone))
+                    app.Phone = !string.IsNullOrWhiteSpace(m.PhoneNormalized) ? m.PhoneNormalized : (!string.IsNullOrWhiteSpace(m.ContactPhone) ? m.ContactPhone : (m.CandidatePhone ?? ""));
 
                 // Enrich điểm AI thật từ Gemini và phân tích tiêu chí chi tiết
                 if (scoreByApp.TryGetValue(app.ApplicationId, out var aiScore))

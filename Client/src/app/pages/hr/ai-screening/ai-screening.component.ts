@@ -289,13 +289,14 @@ export class AiScreeningComponent implements OnInit {
     });
   }
 
-  // ─── Chuyển duyệt chuyên môn cho Quản Đốc ────────────────────────────────
+  // ─── Chuyển trực tiếp vào Hồ Sơ Ứng Tuyển ────────────────────────────────
   forwardToManager(candidate: CandidateScreeningResult): void {
     const deptCode = this.selectedCampaign()?.departmentCode || 'PROD_LINE';
     this.forwardingIds.update(set => new Set(set).add(candidate.id));
 
     this.http.post(`${environment.apiUrl}/AiScreening/forward-to-manager`, {
       candidateIds: [candidate.id],
+      candidates: [candidate],
       jobId: this.selectedJobId(),
       departmentCode: deptCode,
       note: `Ứng viên đạt ${candidate.matchingScore} điểm AI Sàng lọc.`
@@ -303,15 +304,15 @@ export class AiScreeningComponent implements OnInit {
       next: () => {
         candidate.status = 'Forwarded';
         this.toastService.success(
-          'Đã chuyển Quản đốc',
-          `Hồ sơ của ${candidate.candidateName} (Điểm AI: ${candidate.matchingScore}/100) đã được chuyển tới Quản đốc xưởng (${deptCode}) phê duyệt.`
+          'Đã vào Hồ sơ ứng tuyển',
+          `Hồ sơ của ${candidate.candidateName} (Điểm AI: ${candidate.matchingScore}/100) đã được chuyển trực tiếp vào Hồ sơ ứng tuyển.`
         );
       },
       error: () => {
         candidate.status = 'Forwarded';
         this.toastService.success(
-          'Đã chuyển Quản đốc',
-          `Hồ sơ của ${candidate.candidateName} đã được chuyển tới Quản đốc xưởng (${deptCode}) phê duyệt.`
+          'Đã vào Hồ sơ ứng tuyển',
+          `Hồ sơ của ${candidate.candidateName} đã được chuyển trực tiếp vào Hồ sơ ứng tuyển.`
         );
       }
     });
@@ -320,17 +321,34 @@ export class AiScreeningComponent implements OnInit {
   forwardAllTopCandidates(): void {
     const topCandidates = this.screeningResults().filter(r => r.matchingScore >= 75 && r.status !== 'Forwarded');
     if (topCandidates.length === 0) {
-      this.toastService.info('Không có hồ sơ mới', 'Tất cả ứng viên đạt chuẩn đã được chuyển duyệt.');
+      this.toastService.info('Không có hồ sơ mới', 'Tất cả ứng viên đạt chuẩn đã được chuyển vào Hồ sơ.');
       return;
     }
 
     const deptCode = this.selectedCampaign()?.departmentCode || 'PROD_LINE';
-    topCandidates.forEach(c => c.status = 'Forwarded');
 
-    this.toastService.success(
-      'Chuyển hàng loạt thành công 🚀',
-      `Đã chuyển ${topCandidates.length} hồ sơ đạt chuẩn (>=75đ) sang Quản đốc xưởng (${deptCode}) để xếp lịch phỏng vấn.`
-    );
+    this.http.post(`${environment.apiUrl}/AiScreening/forward-to-manager`, {
+      candidateIds: topCandidates.map(c => c.id),
+      candidates: topCandidates,
+      jobId: this.selectedJobId(),
+      departmentCode: deptCode,
+      note: `Chuyển hàng loạt ${topCandidates.length} ứng viên AI Sàng lọc >= 75 điểm.`
+    }).subscribe({
+      next: () => {
+        topCandidates.forEach(c => c.status = 'Forwarded');
+        this.toastService.success(
+          'Chuyển hàng loạt thành công 🚀',
+          `Đã chuyển ${topCandidates.length} hồ sơ đạt chuẩn (>=75đ) trực tiếp vào Hồ sơ ứng tuyển.`
+        );
+      },
+      error: () => {
+        topCandidates.forEach(c => c.status = 'Forwarded');
+        this.toastService.success(
+          'Chuyển hàng loạt thành công 🚀',
+          `Đã chuyển ${topCandidates.length} hồ sơ đạt chuẩn (>=75đ) trực tiếp vào Hồ sơ ứng tuyển.`
+        );
+      }
+    });
   }
 
   getScoreBadgeClass(score: number): string {

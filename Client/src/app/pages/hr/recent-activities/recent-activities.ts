@@ -34,10 +34,11 @@ export class RecentActivitiesComponent implements OnInit {
 
         this.dashboardService.getPagedActivities(page, this.itemsPerPage).subscribe({
             next: (res) => {
-                this.activities.set(res.items);
+                const filtered = (res.items || []).filter(a => a.type !== 'interview_confirmed' && !a.title?.includes('xác nhận'));
+                this.activities.set(filtered);
                 this.currentPage.set(res.currentPage);
                 this.totalPages.set(res.totalPages);
-                this.totalItems.set(res.totalItems);
+                this.totalItems.set(filtered.length);
                 this.isLoading.set(false);
                 this.cdr.detectChanges();
             },

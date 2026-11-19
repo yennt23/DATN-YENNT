@@ -257,11 +257,11 @@
             </button>
           </div>
 
-          <!-- Nút chuyển Quản đốc duyệt hàng loạt -->
+          <!-- Nút chuyển vào Hồ sơ ứng tuyển hàng loạt -->
           <button (click)="forwardAllTopCandidates()" type="button"
             class="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-500/20 transition-all active:scale-95">
-            <span class="material-symbols-outlined text-[16px]">send_and_archive</span>
-            <span>Chuyển Duyệt Hàng Loạt (≥75đ)</span>
+            <span class="material-symbols-outlined text-[16px]">how_to_reg</span>
+            <span>Chuyển Vào Hồ Sơ (≥75đ)</span>
           </button>
         </div>
       </div>
@@ -353,13 +353,13 @@
                   @if (item.status === 'Forwarded') {
                     <span class="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs font-bold">
                       <span class="material-symbols-outlined text-[16px]">done_all</span>
-                      <span>Đã chuyển Quản đốc</span>
+                      <span>Đã vào Hồ sơ</span>
                     </span>
                   } @else {
                     <button (click)="forwardToManager(item)" type="button"
                       class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 dark:text-indigo-300 text-xs font-bold transition-all active:scale-95">
-                      <span class="material-symbols-outlined text-[16px]">send</span>
-                      <span>Chuyển duyệt</span>
+                      <span class="material-symbols-outlined text-[16px]">person_add</span>
+                      <span>Chuyển vào hồ sơ</span>
                     </button>
                   }
                 </td>

@@ -88,28 +88,29 @@ public class AiScreeningController : ControllerBase
     }
 
     /// <summary>
-    /// Chuyển ứng viên đã sàng lọc sang Quản đốc xưởng duyệt chuyên môn
+    /// Chuyển ứng viên đã sàng lọc trực tiếp sang Hồ sơ ứng tuyển
     /// </summary>
     [HttpPost("forward-to-manager")]
     public async Task<IActionResult> ForwardToManager([FromBody] ForwardToManagerRequestDto request)
     {
-        if (request == null || !request.CandidateIds.Any())
+        if (request == null || (!request.CandidateIds.Any() && (request.Candidates == null || !request.Candidates.Any())))
         {
             return BadRequest(new { success = false, message = "Danh sách ứng viên không được để trống." });
         }
 
         try
         {
+            var count = request.Candidates?.Count ?? request.CandidateIds.Count;
             var success = await _aiScreeningService.ForwardCandidatesToManagerAsync(request);
             return Ok(new
             {
                 success = true,
-                message = $"Đã chuyển thành công {request.CandidateIds.Count} hồ sơ tới Quản đốc xưởng ({request.DepartmentCode}) phê duyệt phỏng vấn."
+                message = $"Đã chuyển thành công {count} ứng viên trực tiếp vào danh sách Hồ sơ ứng tuyển."
             });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Lỗi chuyển hồ sơ sang Quản đốc");
+            _logger.LogError(ex, "Lỗi chuyển hồ sơ vào Hồ sơ ứng tuyển");
             return StatusCode(500, new { success = false, message = "Không thể chuyển hồ sơ: " + ex.Message });
         }
     }

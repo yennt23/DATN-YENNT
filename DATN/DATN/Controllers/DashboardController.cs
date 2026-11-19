@@ -232,27 +232,6 @@ public class DashboardController : ControllerBase
 
             activities.AddRange(recentApplications);
 
-            // Lấy interviews được confirm gần nhất
-            var recentInterviews = await _context.Interviews
-                .AsNoTracking()
-                .Include(i => i.Application)
-                .ThenInclude(a => a.Candidate)
-                .Where(i => i.Status == "SCHEDULED")
-                .OrderByDescending(i => i.CreatedAt)
-                .Take(count / 4)
-                .Select(i => new DashboardActivityDto
-                {
-                    Type = "interview_confirmed",
-                    Title = "Phỏng vấn đã xác nhận",
-                    Description = $"{i.Application.ContactName ?? i.Application.Candidate!.FullName} đã chấp nhận lời mời phỏng vấn.",
-                    Timestamp = i.CreatedAt,
-                    Icon = "check_circle",
-                    IconColor = "green"
-                })
-                .ToListAsync();
-
-            activities.AddRange(recentInterviews);
-
             // Lấy offers gần nhất
             var recentOffers = await _context.Applications
                 .AsNoTracking()
@@ -329,26 +308,6 @@ public class DashboardController : ControllerBase
                     .ToListAsync();
 
                 activities.AddRange(recentApplications);
-
-                var recentInterviews = await _context.Interviews
-                    .AsNoTracking()
-                    .Include(i => i.Application)
-                    .ThenInclude(a => a.Candidate)
-                    .Where(i => i.Status == "SCHEDULED")
-                    .OrderByDescending(i => i.CreatedAt)
-                    .Take(maxFetch)
-                    .Select(i => new DashboardActivityDto
-                    {
-                        Type = "interview_confirmed",
-                        Title = "Phỏng vấn đã xác nhận",
-                        Description = $"{i.Application.ContactName ?? i.Application.Candidate!.FullName} đã chấp nhận lời mời phỏng vấn.",
-                        Timestamp = i.CreatedAt,
-                        Icon = "check_circle",
-                        IconColor = "green"
-                    })
-                    .ToListAsync();
-
-                activities.AddRange(recentInterviews);
 
                 var recentOffers = await _context.Applications
                     .AsNoTracking()

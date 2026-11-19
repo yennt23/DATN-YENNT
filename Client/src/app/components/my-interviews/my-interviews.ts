@@ -60,7 +60,11 @@ export class MyInterviews implements OnInit {
     comment: '',
     decision: '' as 'Passed' | 'Failed' | 'Consider' | '',
     submittedByName: '' as string | undefined,
-    isBelated: false
+    isBelated: false,
+    offeredSalary: null as number | null,
+    expectedStartDate: '',
+    offerNote: '',
+    sendOfferEmail: true
   };
 
   private interviewStateCache = new Map<string, InterviewState>();
@@ -418,7 +422,11 @@ export class MyInterviews implements OnInit {
       comment: '',
       decision: '',
       submittedByName: undefined,
-      isBelated: false
+      isBelated: false,
+      offeredSalary: null,
+      expectedStartDate: '',
+      offerNote: '',
+      sendOfferEmail: true
     };
   }
 
@@ -497,7 +505,11 @@ export class MyInterviews implements OnInit {
             comment: data.comment || '',
             decision: data.result as 'Passed' | 'Failed' | 'Consider',
             submittedByName: data.submittedByName,
-            isBelated: data.isBelated || false
+            isBelated: data.isBelated || false,
+            offeredSalary: (data as any).offeredSalary || null,
+            expectedStartDate: (data as any).expectedStartDate || '',
+            offerNote: (data as any).offerNote || '',
+            sendOfferEmail: false
           };
 
           this.cdr.markForCheck();
@@ -568,7 +580,11 @@ export class MyInterviews implements OnInit {
         comment: this.evaluationForm.comment.trim(),
         result: this.evaluationForm.decision as 'Passed' | 'Failed' | 'Consider',
         details: JSON.stringify(details),
-        submittedById: currentUser.userId
+        submittedById: currentUser.userId,
+        offeredSalary: this.evaluationForm.decision === 'Passed' ? this.evaluationForm.offeredSalary : null,
+        expectedStartDate: this.evaluationForm.decision === 'Passed' && this.evaluationForm.expectedStartDate ? this.evaluationForm.expectedStartDate : null,
+        offerNote: this.evaluationForm.decision === 'Passed' ? this.evaluationForm.offerNote?.trim() : null,
+        sendOfferEmail: this.evaluationForm.decision === 'Passed' ? this.evaluationForm.sendOfferEmail : false
       };
 
 

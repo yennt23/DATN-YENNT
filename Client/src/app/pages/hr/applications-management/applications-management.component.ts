@@ -398,13 +398,13 @@ export class ApplicationsManagementComponent implements OnInit {
     );
     const hasPdf = !!(item.cvFileUrl || item.cvUrl || matchedTemplate?.cvFileUrl);
     const source: ApplicationSource = item.applicationSource
-      || (item.source?.includes('GOOGLE') ? 'GOOGLE_FORM_QR' : item.source === 'WALK_IN' ? 'WALK_IN' : hasPdf ? 'PDF_UPLOAD' : (matchedTemplate?.applicationSource || 'GOOGLE_FORM_QR'));
+      || (item.source === 'CAREER_SITE' ? 'PDF_UPLOAD' : item.source?.includes('GOOGLE') ? 'GOOGLE_FORM_QR' : item.source === 'WALK_IN' ? 'WALK_IN' : hasPdf ? 'PDF_UPLOAD' : (matchedTemplate?.applicationSource || 'GOOGLE_FORM_QR'));
     const track: RecruitmentTrack = item.recruitmentTrack || matchedTemplate?.recruitmentTrack || (source === 'PDF_UPLOAD' ? 'PROFESSIONAL' : 'MASS_LABOR');
     const scoring: ScoringMethod = item.scoringMethod || matchedTemplate?.scoringMethod || (track === 'PROFESSIONAL' ? 'GEMINI_AI' : 'RULE_ENGINE');
     
     // Xử lý điểm AI: Lấy điểm thật từ Backend, fallback sang hồ sơ gốc nếu chưa tạo bản ghi điểm
     const rawScore = item.matchScore ?? item.aiScore ?? matchedTemplate?.aiMatchingScore;
-    const hasAiScore = rawScore !== null && rawScore !== undefined;
+    const hasAiScore = rawScore !== null && rawScore !== undefined && Number(rawScore) > 0;
     const score = hasAiScore ? Math.round(Number(rawScore)) : 0;
 
     let checklist: OralInterviewChecklist = matchedTemplate?.oralChecklist
@@ -455,9 +455,9 @@ export class ApplicationsManagementComponent implements OnInit {
       jobCode: item.jobCode || matchedTemplate?.jobCode || 'JOB-ATS',
       departmentCode: (item.departmentCode as any) || matchedTemplate?.departmentCode || (track === 'PROFESSIONAL' ? 'TECH_MNT' : 'PROD_LINE'),
       departmentName: item.departmentName || matchedTemplate?.departmentName || (track === 'PROFESSIONAL' ? 'Phòng Kỹ Thuật & Bảo Trì' : 'Xưởng Sản Xuất & Lắp Ráp SMT'),
-      candidateName: item.candidateName || matchedTemplate?.candidateName || 'Ứng viên ATS',
-      phone: item.phone || matchedTemplate?.phone || '0987654321',
-      email: item.email || matchedTemplate?.email || '',
+      candidateName: item.candidateName || item.contactName || matchedTemplate?.candidateName || 'Ứng viên',
+      phone: item.phone || item.contactPhone || item.phoneNormalized || matchedTemplate?.phone || '',
+      email: item.email || item.contactEmail || matchedTemplate?.email || '',
       yearOfBirth: item.yearOfBirth || matchedTemplate?.yearOfBirth || '2000',
       cccd: item.citizenId || matchedTemplate?.cccd || ('02720000' + (1234 + idx)),
       hometown: item.hometown || matchedTemplate?.hometown || 'Bắc Ninh',

@@ -12,6 +12,10 @@ export interface EvaluationSubmitDto {
     details: string; 
     submittedByName?: string;
     isBelated?: boolean;
+    offeredSalary?: number | null;
+    expectedStartDate?: string | null;
+    offerNote?: string | null;
+    sendOfferEmail?: boolean;
 }
 
 export interface EvaluationDetail {

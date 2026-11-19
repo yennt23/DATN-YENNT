@@ -423,7 +423,118 @@ BẮT BUỘC trả về duy nhất một chuỗi JSON thuần tuý (JSON object,
 
     public async Task<bool> ForwardCandidatesToManagerAsync(ForwardToManagerRequestDto request)
     {
-        _logger.LogInformation("Chuyển {Count} hồ sơ sang Quản đốc xưởng ({DeptCode})", request.CandidateIds.Count, request.DepartmentCode);
-        return await Task.FromResult(true);
+        _logger.LogInformation("Chuyển {Count} hồ sơ trực tiếp vào Hồ sơ ứng tuyển cho Job {JobId}", request.CandidateIds.Count, request.JobId);
+
+        if (request.Candidates == null || !request.Candidates.Any())
+        {
+            return true;
+        }
+
+        var defaultStage = await _dbContext.PipelineStages.FirstOrDefaultAsync(s => s.Code == "APPLIED" || s.Code == "NEW") 
+                           ?? await _dbContext.PipelineStages.FirstOrDefaultAsync();
+
+        foreach (var cDto in request.Candidates)
+        {
+            try
+            {
+                // Tìm hoặc tạo Candidate
+                Entities.Candidate? candidate = null;
+                if (!string.IsNullOrWhiteSpace(cDto.Email))
+                {
+                    candidate = await _dbContext.Candidates.FirstOrDefaultAsync(c => c.Email == cDto.Email.Trim());
+                }
+                if (candidate == null && !string.IsNullOrWhiteSpace(cDto.Phone))
+                {
+                    candidate = await _dbContext.Candidates.FirstOrDefaultAsync(c => c.Phone == cDto.Phone.Trim());
+                }
+
+                if (candidate == null)
+                {
+                    candidate = new Entities.Candidate
+                    {
+                        CandidateId = Guid.NewGuid(),
+                        FullName = string.IsNullOrWhiteSpace(cDto.CandidateName) ? "Ứng viên" : cDto.CandidateName.Trim(),
+                        Email = string.IsNullOrWhiteSpace(cDto.Email) ? $"{Guid.NewGuid():N}@candidate.local" : cDto.Email.Trim(),
+                        NormalizedEmail = string.IsNullOrWhiteSpace(cDto.Email) ? null : cDto.Email.Trim().ToUpperInvariant(),
+                        Phone = cDto.Phone?.Trim() ?? "",
+                        Headline = cDto.SuggestedRole ?? "Ứng viên nhà máy",
+                        Summary = cDto.SummaryReview,
+                        Source = "AI_SCREENING",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _dbContext.Candidates.Add(candidate);
+                    await _dbContext.SaveChangesAsync();
+                }
+
+                // Kiểm tra Application cho Job này
+                var existingApp = await _dbContext.Applications
+                    .FirstOrDefaultAsync(a => a.JobId == request.JobId && a.CandidateId == candidate.CandidateId);
+
+                Guid appId;
+                if (existingApp != null)
+                {
+                    appId = existingApp.ApplicationId;
+                    existingApp.Status = "ACTIVE";
+                    existingApp.AiAnalysisSummary = cDto.SummaryReview;
+                    existingApp.LastStageChangedAt = DateTime.UtcNow;
+                    if (string.IsNullOrWhiteSpace(existingApp.ContactName) && !string.IsNullOrWhiteSpace(cDto.CandidateName))
+                        existingApp.ContactName = cDto.CandidateName;
+                    if (string.IsNullOrWhiteSpace(existingApp.ContactEmail) && !string.IsNullOrWhiteSpace(cDto.Email))
+                        existingApp.ContactEmail = cDto.Email;
+                    if (string.IsNullOrWhiteSpace(existingApp.ContactPhone) && !string.IsNullOrWhiteSpace(cDto.Phone))
+                        existingApp.ContactPhone = cDto.Phone;
+                }
+                else
+                {
+                    appId = Guid.NewGuid();
+                    var newApp = new Entities.Application
+                    {
+                        ApplicationId = appId,
+                        JobId = request.JobId,
+                        CandidateId = candidate.CandidateId,
+                        CurrentStageId = defaultStage?.StageId ?? Guid.NewGuid(),
+                        AppliedAt = DateTime.UtcNow,
+                        LastStageChangedAt = DateTime.UtcNow,
+                        Source = "AI_SCREENING",
+                        Status = "ACTIVE",
+                        ContactName = string.IsNullOrWhiteSpace(cDto.CandidateName) ? candidate.FullName : cDto.CandidateName.Trim(),
+                        ContactEmail = string.IsNullOrWhiteSpace(cDto.Email) ? candidate.Email : cDto.Email.Trim(),
+                        ContactPhone = string.IsNullOrWhiteSpace(cDto.Phone) ? candidate.Phone : cDto.Phone.Trim(),
+                        ApplicationSource = "PDF_UPLOAD",
+                        ScoringMethod = "GEMINI_AI",
+                        RawResumeText = cDto.SummaryReview,
+                        AiAnalysisSummary = cDto.SummaryReview,
+                        CvFileUrl = !string.IsNullOrWhiteSpace(cDto.FileName) ? $"/uploads/cvs/{cDto.FileName}" : null
+                    };
+                    _dbContext.Applications.Add(newApp);
+                }
+
+                // Lưu điểm AI vào ApplicationAiScores
+                var aiScore = new Entities.ApplicationAiScore
+                {
+                    AiScoreId = Guid.NewGuid(),
+                    ApplicationId = appId,
+                    MatchingScore = cDto.MatchingScore,
+                    MatchedSkillsJson = JsonSerializer.Serialize(cDto.ExtractedSkills ?? new List<string>()),
+                    Model = "gemini-2.5-flash",
+                    BreakdownJson = JsonSerializer.Serialize(new
+                    {
+                        skillsScore = cDto.SkillsScore,
+                        experienceScore = cDto.ExperienceScore,
+                        healthShiftScore = cDto.HealthShiftScore
+                    }),
+                    CreatedAt = DateTime.UtcNow
+                };
+                _dbContext.ApplicationAiScores.Add(aiScore);
+
+                await _dbContext.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi khi lưu Application cho ứng viên {Name} ({Email})", cDto.CandidateName, cDto.Email);
+            }
+        }
+
+        return true;
     }
 }

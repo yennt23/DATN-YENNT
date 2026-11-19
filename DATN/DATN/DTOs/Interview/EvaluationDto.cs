@@ -25,6 +25,26 @@ public class EvaluationDto
     public string? SubmittedByName { get; set; }
 
     public bool IsBelated { get; set; }
+
+    /// <summary>
+    /// Mức lương thỏa thuận (Deal lương - VNĐ/tháng) khi đạt phỏng vấn
+    /// </summary>
+    public decimal? OfferedSalary { get; set; }
+
+    /// <summary>
+    /// Ngày dự kiến nhận việc
+    /// </summary>
+    public DateTime? ExpectedStartDate { get; set; }
+
+    /// <summary>
+    /// Ghi chú đãi ngộ / điều khoản deal lương
+    /// </summary>
+    public string? OfferNote { get; set; }
+
+    /// <summary>
+    /// Cờ gửi email thông báo trúng tuyển & Deal lương cho ứng viên
+    /// </summary>
+    public bool SendOfferEmail { get; set; } = true;
 }
 
 public class AiJudgeRequestDto

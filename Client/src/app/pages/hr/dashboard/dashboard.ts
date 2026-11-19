@@ -259,7 +259,7 @@ export class Dashboard implements OnInit, OnDestroy {
     this.dashboardService.getRecentActivity(10).subscribe({
       next: (data) => {
         console.log(' Đã tải hoạt động:', data);
-        this.activities = data;
+        this.activities = (data || []).filter(a => a.type !== 'interview_confirmed' && !a.title?.includes('xác nhận'));
         this.isLoadingActivities = false;
         if (!this.isDestroyed) {
           this.cdr.detectChanges();

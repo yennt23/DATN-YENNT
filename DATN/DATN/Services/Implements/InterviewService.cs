@@ -388,6 +388,121 @@ public class InterviewService : IInterviewService
 </html>";
     }
 
+    private void SendOfferLetterEmail(Entities.Application application, EvaluationDto dto)
+    {
+        var candidateEmail = !string.IsNullOrWhiteSpace(application.ContactEmail)
+            ? application.ContactEmail.Trim()
+            : application.Candidate?.Email?.Trim();
+
+        if (string.IsNullOrWhiteSpace(candidateEmail) || 
+            !candidateEmail.Contains("@") || 
+            candidateEmail.EndsWith(".local", StringComparison.OrdinalIgnoreCase) || 
+            candidateEmail.EndsWith(".test", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("ℹ️ Bỏ qua gửi email Offer trúng tuyển cho email nội bộ/ảo: {CandidateEmail}", candidateEmail);
+            return;
+        }
+
+        var candidateName = !string.IsNullOrWhiteSpace(application.ContactName)
+            ? application.ContactName.Trim()
+            : application.Candidate?.FullName ?? "Ứng viên";
+
+        var jobTitle = application.Job?.Title ?? "Vị trí ứng tuyển";
+        var salaryFormatted = dto.OfferedSalary.HasValue && dto.OfferedSalary.Value > 0
+            ? $"{dto.OfferedSalary.Value:N0} VNĐ/tháng"
+            : "Thỏa thuận theo chính sách công ty";
+        var startDateFormatted = dto.ExpectedStartDate.HasValue
+            ? dto.ExpectedStartDate.Value.ToString("dd/MM/yyyy")
+            : "Sẽ thống nhất khi tiếp nhận";
+        var benefitsNote = !string.IsNullOrWhiteSpace(dto.OfferNote)
+            ? dto.OfferNote.Replace("\r\n", "<br>").Replace("\n", "<br>")
+            : "Hưởng đầy đủ chế độ BHXH, BHYT, phụ cấp ăn ca, chuyên cần và thưởng theo quy định nhà máy.";
+
+        var subject = $"[V9 TECH] THƯ MỜI NHẬN VIỆC (OFFER LETTER) - VỊ TRÍ {jobTitle.ToUpper()} - {candidateName.ToUpper()}";
+
+        var htmlBody = $@"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset=""UTF-8"">
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f8fafc; margin: 0; padding: 20px; }}
+        .box {{ max-width: 650px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }}
+        .header {{ background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: white; padding: 32px 24px; text-align: center; }}
+        .header h1 {{ margin: 0 0 8px 0; font-size: 22px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .header p {{ margin: 0; font-size: 14px; opacity: 0.95; }}
+        .content {{ padding: 32px 28px; }}
+        .greeting {{ font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #0f172a; }}
+        .card {{ background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 20px; margin: 24px 0; }}
+        .card-row {{ padding: 10px 0; border-bottom: 1px dashed #dcfce7; font-size: 14px; }}
+        .card-row:last-child {{ border-bottom: none; }}
+        .card-label {{ color: #166534; font-weight: 600; display: inline-block; width: 190px; }}
+        .card-value {{ color: #0f172a; font-weight: 700; }}
+        .highlight {{ color: #059669; font-size: 18px; }}
+        .note-box {{ background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 16px; margin: 20px 0; font-size: 13.5px; border-radius: 0 8px 8px 0; }}
+        .footer {{ text-align: center; padding: 24px; font-size: 12px; color: #64748b; background: #f8fafc; border-top: 1px solid #e2e8f0; }}
+    </style>
+</head>
+<body>
+    <div class=""box"">
+        <div class=""header"">
+            <h1>THƯ MỜI NHẬN VIỆC (JOB OFFER)</h1>
+            <p>Tập Đoàn Công Nghệ & Sản Xuất V9 TECH</p>
+        </div>
+        <div class=""content"">
+            <div class=""greeting"">Kính gửi: {candidateName},</div>
+            <p>Hội đồng tuyển dụng <strong>V9 TECH</strong> trân trọng chúc mừng bạn đã xuất sắc vượt qua các vòng đánh giá phỏng vấn. Chúng tôi rất ấn tượng với năng lực, tác phong của bạn và hân hạnh gửi tới bạn Thư mời nhận việc cho vị trí sau:</p>
+            
+            <div class=""card"">
+                <div class=""card-row"">
+                    <span class=""card-label"">Vị trí tiếp nhận:</span>
+                    <span class=""card-value"">{jobTitle}</span>
+                </div>
+                <div class=""card-row"">
+                    <span class=""card-label"">Mức lương thỏa thuận (Deal):</span>
+                    <span class=""card-value highlight"">{salaryFormatted}</span>
+                </div>
+                <div class=""card-row"">
+                    <span class=""card-label"">Ngày bắt đầu làm việc:</span>
+                    <span class=""card-value"">{startDateFormatted}</span>
+                </div>
+                <div class=""card-row"">
+                    <span class=""card-label"">Chế độ &amp; Đãi ngộ:</span>
+                    <span class=""card-value"" style=""font-weight: normal;"">{benefitsNote}</span>
+                </div>
+            </div>
+
+            <div class=""note-box"">
+                <strong>📌 Hướng dẫn xác nhận:</strong><br>
+                Vui lòng trả lời email này hoặc liên hệ Bộ phận Tuyển dụng Nhân sự V9 TECH trong vòng <strong>72 giờ</strong> kể từ khi nhận thư để xác nhận đồng ý nhận việc và hoàn thiện thủ tục Onboarding.
+            </div>
+
+            <p style=""margin-top: 24px;"">Chúng tôi rất mong đợi sự gia nhập và đồng hành của bạn cùng sự phát triển của V9 TECH!</p>
+            <p style=""margin-top: 16px;"">Trân trọng,<br><strong>Phòng Tuyển Dụng & Phát Triển Nhân Tài V9 TECH</strong></p>
+        </div>
+        <div class=""footer"">
+            <p>Email này được gửi tự động từ Hệ thống Quản lý Tuyển dụng Thông minh V9 TECH ATS.</p>
+        </div>
+    </div>
+</body>
+</html>";
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var scopedEmailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+                await scopedEmailService.SendEmailAsync(candidateEmail, subject, htmlBody);
+                _logger.LogInformation("📧 Đã gửi email Offer trúng tuyển thành công tới {CandidateEmail}", candidateEmail);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ Gửi email Offer trúng tuyển thất bại tới {CandidateEmail}", candidateEmail);
+            }
+        });
+    }
+
     /// <summary>
     /// Submit kết quả đánh giá phỏng vấn
     /// Tự động cập nhật trạng thái Application dựa trên Result
@@ -401,6 +516,9 @@ public class InterviewService : IInterviewService
             // Validate Interview exists
             var interview = await _context.Interviews
                 .Include(i => i.Application)
+                    .ThenInclude(a => a.Job)
+                .Include(i => i.Application)
+                    .ThenInclude(a => a.Candidate)
                 .FirstOrDefaultAsync(i => i.InterviewId == dto.InterviewId);
 
             if (interview == null)
@@ -465,10 +583,31 @@ public class InterviewService : IInterviewService
                         }
                     }
 
-                    if (dto.Result == "Passed" && application.ApplicationSource == "PDF_UPLOAD" &&
-                        (string.IsNullOrEmpty(application.OfferStatus) || application.OfferStatus == "Not_Required"))
+                    if (dto.Result == "Passed")
                     {
-                        application.OfferStatus = "Offer_Pending";
+                        if (dto.OfferedSalary.HasValue && dto.OfferedSalary.Value > 0)
+                        {
+                            application.OfferedSalary = dto.OfferedSalary.Value;
+                        }
+                        application.OfferStatus = "Offer_Sent";
+                        application.OfferExpiresAt = DateTime.UtcNow.AddDays(3);
+                        if (!string.IsNullOrWhiteSpace(dto.OfferNote))
+                        {
+                            application.OfferResponseNote = dto.OfferNote;
+                        }
+
+                        // Gửi email xác nhận trúng tuyển & Deal lương
+                        if (dto.SendOfferEmail)
+                        {
+                            try
+                            {
+                                SendOfferLetterEmail(application, dto);
+                            }
+                            catch (Exception mailEx)
+                            {
+                                _logger.LogWarning(mailEx, "⚠️ Không thể gửi email Offer trúng tuyển cho ứng viên");
+                            }
+                        }
                     }
 
                     _logger.LogInformation("✅ Updated Application {AppId}: {OldStatus} → {NewStatus}", 
