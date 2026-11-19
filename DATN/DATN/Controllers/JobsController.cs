@@ -296,7 +296,8 @@ public class JobsController : ControllerBase
             }
 
             await _context.SaveChangesAsync();
-            var campaign = await _jobService.EnsureCampaignQrAsync(id, forceRecreate: false);
+            // forceRecreate: true để sinh lại mã QR ngay lập tức cho URL mới vừa cập nhật
+            var campaign = await _jobService.EnsureCampaignQrAsync(id, forceRecreate: true);
             return Ok(campaign);
         }
         catch (Exception ex)
@@ -467,7 +468,7 @@ CHỈ trả về JSON thuần (không markdown, không code block):
                 for (int attempt = 0; attempt < 3; attempt++)
                 {
                     var currentKey = attempt == 0 ? apiKey : _apiKeyProvider.GetNextApiKey();
-                    var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={currentKey}";
+                    var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={currentKey}";
                     
                     response = await httpClient.PostAsync(apiUrl, jsonContent);
                     if (response.IsSuccessStatusCode) break;

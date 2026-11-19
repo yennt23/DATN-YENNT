@@ -67,6 +67,10 @@ public class EmailService : IEmailService
             mailMessage.To.Add(toEmail.Trim());
 
             // Cấu hình SMTP Client với thông số chuẩn TLS Gmail
+#pragma warning disable SYSLIB0014
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12 | SecurityProtocolType.Tls13;
+#pragma warning restore SYSLIB0014
+
             using var smtpClient = new SmtpClient(host, port)
             {
                 EnableSsl = enableSsl,
@@ -82,8 +86,21 @@ public class EmailService : IEmailService
         }
         catch (SmtpException smtpEx)
         {
-            _logger.LogError(smtpEx, "❌ Lỗi SMTP khi gửi email đến: {ToEmail}. StatusCode: {StatusCode}, Error: {Message}", 
-                toEmail, smtpEx.StatusCode, smtpEx.Message);
+            var isWebLoginOrAuth = smtpEx.Message.Contains("WebLoginRequired", StringComparison.OrdinalIgnoreCase) ||
+                                   smtpEx.Message.Contains("534", StringComparison.OrdinalIgnoreCase) ||
+                                   (smtpEx.InnerException?.Message.Contains("connection was closed", StringComparison.OrdinalIgnoreCase) ?? false);
+
+            if (isWebLoginOrAuth)
+            {
+                _logger.LogError(smtpEx, "❌ [SMTP GMAIL ERROR 534] Gmail từ chối xác thực khi gửi đến: {ToEmail}. " +
+                    "Nguyên nhân: Mật khẩu ứng dụng (App Password) của Gmail trong appsettings.json đã hết hạn, bị thu hồi hoặc chưa bật xác thực 2 bước. " +
+                    "Cách sửa: Truy cập https://myaccount.google.com/apppasswords tạo mật khẩu ứng dụng 16 ký tự mới và cập nhật vào appsettings.json (SmtpSettings:AppPassword).", toEmail);
+            }
+            else
+            {
+                _logger.LogError(smtpEx, "❌ Lỗi SMTP khi gửi email đến: {ToEmail}. StatusCode: {StatusCode}, Error: {Message}", 
+                    toEmail, smtpEx.StatusCode, smtpEx.Message);
+            }
             throw;
         }
         catch (Exception ex)
@@ -148,6 +165,10 @@ public class EmailService : IEmailService
             }
 
             // Cấu hình SMTP Client với thông số chuẩn TLS Gmail
+#pragma warning disable SYSLIB0014
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12 | SecurityProtocolType.Tls13;
+#pragma warning restore SYSLIB0014
+
             using var smtpClient = new SmtpClient(host, port)
             {
                 EnableSsl = enableSsl,
@@ -164,11 +185,24 @@ public class EmailService : IEmailService
         }
         catch (SmtpException smtpEx)
         {
-            _logger.LogError(smtpEx, "❌ Lỗi SMTP khi gửi email đến: {ToEmail}. StatusCode: {StatusCode}, Error: {Message}", 
-                toEmail, smtpEx.StatusCode, smtpEx.Message);
+            var isWebLoginOrAuth = smtpEx.Message.Contains("WebLoginRequired", StringComparison.OrdinalIgnoreCase) ||
+                                   smtpEx.Message.Contains("534", StringComparison.OrdinalIgnoreCase) ||
+                                   (smtpEx.InnerException?.Message.Contains("connection was closed", StringComparison.OrdinalIgnoreCase) ?? false);
+
+            if (isWebLoginOrAuth)
+            {
+                _logger.LogError(smtpEx, "❌ [SMTP GMAIL ERROR 534] Gmail từ chối xác thực khi gửi đến: {ToEmail}. " +
+                    "Nguyên nhân: Mật khẩu ứng dụng (App Password) của Gmail trong appsettings.json đã hết hạn, bị thu hồi hoặc chưa bật xác thực 2 bước. " +
+                    "Cách sửa: Truy cập https://myaccount.google.com/apppasswords tạo mật khẩu ứng dụng 16 ký tự mới và cập nhật vào appsettings.json (SmtpSettings:AppPassword).", toEmail);
+            }
+            else
+            {
+                _logger.LogError(smtpEx, "❌ Lỗi SMTP khi gửi email đến: {ToEmail}. StatusCode: {StatusCode}, Error: {Message}", 
+                    toEmail, smtpEx.StatusCode, smtpEx.Message);
+            }
 
             // FALLBACK AN TOÀN: Nếu lỗi do người nhận trong CC không hợp lệ, thử gửi trực tiếp cho toEmail
-            if (ccEmails != null && ccEmails.Count > 0)
+            if (ccEmails != null && ccEmails.Count > 0 && !isWebLoginOrAuth)
             {
                 _logger.LogInformation("🔄 Đang thử gửi lại trực tiếp cho {ToEmail} (loại bỏ CC)...", toEmail);
                 await SendEmailAsync(toEmail, subject, body);

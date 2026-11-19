@@ -214,14 +214,40 @@ public class AiScreeningService : IAiScreeningService
                 };
 
                 var jsonContent = JsonSerializer.Serialize(requestBody);
-                var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+                var modelsToTry = new[] { "gemini-2.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash-lite" };
+                HttpResponseMessage? response = null;
+                string? responseJson = null;
 
-                var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
-                var response = await _httpClient.PostAsync(apiUrl, content);
-
-                if (response.IsSuccessStatusCode)
+                foreach (var model in modelsToTry)
                 {
-                    var responseJson = await response.Content.ReadAsStringAsync();
+                    try
+                    {
+                        var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
+                        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+                        response = await _httpClient.PostAsync(apiUrl, content);
+                        if (response.IsSuccessStatusCode)
+                        {
+                            responseJson = await response.Content.ReadAsStringAsync();
+                            _apiKeyProvider.ReportSuccess(apiKey);
+                            break;
+                        }
+
+                        var err = await response.Content.ReadAsStringAsync();
+                        _logger.LogWarning("Gemini screening with model {Model} failed: {StatusCode} - {Error}", model, response.StatusCode, err);
+                        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest || (int)response.StatusCode == 429)
+                        {
+                            _apiKeyProvider.ReportFailure(apiKey, err);
+                            break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Lỗi gọi model {Model}", model);
+                    }
+                }
+
+                if (responseJson != null)
+                {
                     var parsed = ParseGeminiScreeningJson(responseJson, fileName);
                     if (parsed != null)
                     {
@@ -230,7 +256,8 @@ public class AiScreeningService : IAiScreeningService
                 }
                 else
                 {
-                    _logger.LogWarning("Gemini API call failed with status: {StatusCode}", response.StatusCode);
+                    _apiKeyProvider.ReportFailure(apiKey, $"Status: {response?.StatusCode}");
+                    _logger.LogWarning("Gemini API call failed with status: {StatusCode}", response?.StatusCode);
                 }
             }
             catch (Exception ex)

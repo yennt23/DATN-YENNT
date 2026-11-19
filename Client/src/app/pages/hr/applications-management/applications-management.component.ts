@@ -320,6 +320,9 @@ export class ApplicationsManagementComponent implements OnInit {
   });
 
   selectedCount = computed(() => this.selectedIds().size);
+  selectableVisibleCount = computed(() => {
+    return this.filteredApplications().filter(a => this.canSelectForBatch(a)).length;
+  });
 
   ngOnInit(): void {
     const routeJobId = this.route.snapshot.paramMap.get('jobId');
@@ -714,11 +717,31 @@ export class ApplicationsManagementComponent implements OnInit {
     this.selectedIds.set(new Set());
   }
 
-  toggleSelection(appId: string, event?: Event): void {
+  isAlreadyScheduled(app: IndustrialApplication): boolean {
+    if (!app) return false;
+    const status = (app.status || '').toUpperCase();
+    return status === 'SCHEDULEDINTERVIEW' ||
+           status === 'INTERVIEW_SCHEDULED' ||
+           status === 'INTERVIEWPASSED' ||
+           status === 'HIRED' ||
+           !!app.convertedEmployeeCode ||
+           !!app.interviewBatchId ||
+           !!app.isBlacklisted;
+  }
+
+  canSelectForBatch(app: IndustrialApplication): boolean {
+    return !this.isAlreadyScheduled(app);
+  }
+
+  toggleSelection(app: IndustrialApplication, event?: Event): void {
     if (event) event.stopPropagation();
+    if (this.isAlreadyScheduled(app)) {
+      this.toast.info('Thông báo', `Ứng viên ${app.candidateName} đã được xếp lịch phỏng vấn.`);
+      return;
+    }
     const next = new Set(this.selectedIds());
-    if (next.has(appId)) next.delete(appId);
-    else next.add(appId);
+    if (next.has(app.applicationId)) next.delete(app.applicationId);
+    else next.add(app.applicationId);
     this.selectedIds.set(next);
   }
 
@@ -728,19 +751,22 @@ export class ApplicationsManagementComponent implements OnInit {
       this.selectedIds.set(new Set());
       return;
     }
-    const ids = this.filteredApplications().map(a => a.applicationId);
-    this.selectedIds.set(new Set(ids));
+    // Chỉ chọn các ứng viên CHƯA xếp lịch và đủ điều kiện
+    const eligibleIds = this.filteredApplications()
+      .filter(a => this.canSelectForBatch(a))
+      .map(a => a.applicationId);
+    this.selectedIds.set(new Set(eligibleIds));
   }
 
   selectHighScoreAndShiftReady(): void {
     const matching = this.filteredApplications()
-      .filter(a => a.aiMatchingScore >= 75 && a.shift12hReady && !a.isRuleRejected)
+      .filter(a => this.canSelectForBatch(a) && a.aiMatchingScore >= 75 && a.shift12hReady && !a.isRuleRejected)
       .map(a => a.applicationId);
 
     this.selectedIds.set(new Set(matching));
     this.toast.success(
       'Đã chọn tự động',
-      `Đã tích chọn ${matching.length} ứng viên có Điểm >= 75 & Đạt cam kết Ca Kíp!`
+      `Đã tích chọn ${matching.length} ứng viên chưa xếp lịch có Điểm >= 75 & Đạt cam kết Ca Kíp!`
     );
   }
 
@@ -865,9 +891,16 @@ export class ApplicationsManagementComponent implements OnInit {
 
     this.isSchedulingBatches.set(true);
 
-    const targetJobId = this.selectedJobId() !== 'ALL' && !this.selectedJobId().startsWith('job-')
-      ? this.selectedJobId()
-      : '00000000-0000-0000-0000-000000000001';
+    let targetJobId: string | null = null;
+    if (this.selectedJobId() !== 'ALL' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(this.selectedJobId())) {
+      targetJobId = this.selectedJobId();
+    } else {
+      const selectedApps = this.filteredApplications().filter(a => ids.includes(a.applicationId));
+      const foundJobId = selectedApps.find(a => a.jobId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(a.jobId))?.jobId;
+      if (foundJobId) {
+        targetJobId = foundJobId;
+      }
+    }
 
     const validGuids = ids.filter(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
 
@@ -882,10 +915,21 @@ export class ApplicationsManagementComponent implements OnInit {
         next: (res) => {
           this.isSchedulingBatches.set(false);
           this.showBatchInterviewModal.set(false);
+          // Cập nhật trạng thái hiển thị ngay lập tức sang Đã xếp ca PV
+          this.applications.update(list =>
+            list.map(app => ids.includes(app.applicationId)
+              ? { ...app, status: 'ScheduledInterview', interviewBatchCode: 'Đã xếp ca PV' }
+              : app)
+          );
           this.selectedIds.set(new Set());
           this.toast.success('Xếp ca & Gửi mail thành công', res?.message || `Đã chia tách và xếp ca cho ${ids.length} ứng viên kèm email thông báo!`);
           this.fetchBackendApplications();
           this.loadBatchesFromDb();
+
+          // Tự động chuyển hướng sang menu Lịch phỏng vấn để HR theo dõi ca vừa xếp
+          setTimeout(() => {
+            this.router.navigate(['/hr/interviews']);
+          }, 600);
         },
         error: (err) => {
           this.isSchedulingBatches.set(false);
@@ -904,6 +948,11 @@ export class ApplicationsManagementComponent implements OnInit {
         this.selectedIds.set(new Set());
         const splitText = ids.length > 50 ? `(Đã tự động chia làm ${Math.ceil(ids.length / 50)} ca)` : '';
         this.toast.success('Xếp ca thành công', `Đã xếp ${ids.length} ứng viên vào ca phỏng vấn ${splitText} và gửi email thông báo.`);
+
+        // Tự động chuyển hướng sang menu Lịch phỏng vấn
+        setTimeout(() => {
+          this.router.navigate(['/hr/interviews']);
+        }, 600);
       }, 400);
     }
   }

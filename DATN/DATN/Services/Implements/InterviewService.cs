@@ -215,17 +215,30 @@ public class InterviewService : IInterviewService
                     ccEmails.Add(hrUser.Email);
                 }
 
-                // Lọc sạch CC: loại trừ null/trắng, không trùng với ứng viên nhận mail, không trùng lặp
+                // Lọc sạch CC: loại trừ null/trắng, không trùng với ứng viên nhận mail, không trùng lặp và loại bỏ domain ảo (.local, @factory.com)
                 var distinctCc = ccEmails
-                    .Where(e => !string.IsNullOrWhiteSpace(e) && !e.Equals(candidateEmail, StringComparison.OrdinalIgnoreCase))
+                    .Where(e => !string.IsNullOrWhiteSpace(e) 
+                             && e.Contains("@") 
+                             && e.Contains(".")
+                             && !e.EndsWith(".local", StringComparison.OrdinalIgnoreCase)
+                             && !e.EndsWith(".test", StringComparison.OrdinalIgnoreCase)
+                             && !e.EndsWith("@factory.com", StringComparison.OrdinalIgnoreCase)
+                             && !e.Equals(candidateEmail, StringComparison.OrdinalIgnoreCase))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
-                if (!string.IsNullOrWhiteSpace(candidateEmail))
+                if (!string.IsNullOrWhiteSpace(candidateEmail) && 
+                    candidateEmail.Contains("@") && 
+                    !candidateEmail.EndsWith(".local", StringComparison.OrdinalIgnoreCase) && 
+                    !candidateEmail.EndsWith(".test", StringComparison.OrdinalIgnoreCase))
                 {
                     QueueInterviewInvitationEmail(candidateEmail, distinctCc, subject, emailBody);
                     _logger.LogInformation("📨 Đã đưa email mời phỏng vấn vào hàng đợi gửi nền cho {CandidateEmail} (CC: {CcCount})",
                         candidateEmail, distinctCc.Count);
+                }
+                else if (!string.IsNullOrWhiteSpace(candidateEmail))
+                {
+                    _logger.LogInformation("ℹ️ Bỏ qua gửi email thực tế cho địa chỉ thử nghiệm nội bộ: {CandidateEmail}", candidateEmail);
                 }
                 else
                 {

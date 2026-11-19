@@ -16,7 +16,8 @@ public class ApplicationService : IApplicationService
     private readonly IAiMatchingService _aiMatchingService;
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly IApplicationWorkflowGuardService _workflowGuard;
 
     // Các extension được phép
@@ -176,7 +177,7 @@ public class ApplicationService : IApplicationService
         {
             try
             {
-                using var scope = _serviceProvider.CreateScope();
+                using var scope = _scopeFactory.CreateScope();
                 var scopedAiService = scope.ServiceProvider.GetRequiredService<IAiMatchingService>();
                 var scopedEmailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
 
@@ -202,7 +203,8 @@ public class ApplicationService : IApplicationService
         IAiMatchingService aiMatchingService,
         IEmailService emailService,
         INotificationService notificationService,
-        IServiceProvider serviceProvider,
+        IServiceScopeFactory scopeFactory,
+        IHttpClientFactory httpClientFactory,
         IApplicationWorkflowGuardService workflowGuard)
     {
         _context = context;
@@ -211,7 +213,8 @@ public class ApplicationService : IApplicationService
         _aiMatchingService = aiMatchingService;
         _emailService = emailService;
         _notificationService = notificationService;
-        _serviceProvider = serviceProvider;
+        _scopeFactory = scopeFactory;
+        _httpClientFactory = httpClientFactory;
         _workflowGuard = workflowGuard;
     }
 
@@ -369,15 +372,16 @@ public class ApplicationService : IApplicationService
                             ? "application/pdf"
                             : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
+                        var originalName = !string.IsNullOrWhiteSpace(request.CVFile?.FileName) ? Path.GetFileName(request.CVFile.FileName) : newFileName;
                         var fileEntity = new Entities.File
                         {
                             FileId = Guid.NewGuid(),
                             Provider = "LOCAL",
-                            OriginalFileName = request.CVFile.FileName,
+                            OriginalFileName = originalName,
                             StoredFileName = newFileName,
-                            FileName = request.CVFile.FileName,
+                            FileName = originalName,
                             MimeType = mimeType,
-                            SizeBytes = request.CVFile.Length,
+                            SizeBytes = request.CVFile?.Length ?? 0,
                             Sha256 = fileSha256,
                             LocalPath = $"/uploads/cvs/{newFileName}",
                             Url = $"/uploads/cvs/{newFileName}",
@@ -398,7 +402,7 @@ public class ApplicationService : IApplicationService
                             DocType = "CV",
                             CreatedAt = DateTime.UtcNow,
                             IsPrimary = !hasCv,
-                            DisplayName = request.CVFile.FileName
+                            DisplayName = originalName
                         };
 
                         _context.CandidateDocuments.Add(candidateDocument);
@@ -529,13 +533,16 @@ public class ApplicationService : IApplicationService
                     _logger.LogInformation("✅ Hoàn thành lưu hồ sơ ứng tuyển vào Database thành công.");
 
                     // ===== GỬI EMAIL XÁC NHẬN CHO ỨNG VIÊN (ASYNC BACKGROUND TASK) =====
-                    if (!string.IsNullOrWhiteSpace(applicantEmail))
+                    if (!string.IsNullOrWhiteSpace(applicantEmail) && 
+                        applicantEmail.Contains("@") && 
+                        !applicantEmail.EndsWith(".local", StringComparison.OrdinalIgnoreCase) && 
+                        !applicantEmail.EndsWith(".test", StringComparison.OrdinalIgnoreCase))
                     {
                         _ = Task.Run(async () =>
                         {
                             try
                             {
-                                using var scope = _serviceProvider.CreateScope();
+                                using var scope = _scopeFactory.CreateScope();
                                 var scopedEmailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
 
                                 var confirmationBody = BuildApplicationConfirmationEmailHtml(
@@ -546,18 +553,23 @@ public class ApplicationService : IApplicationService
                                     "Nộp hồ sơ trực tuyến (Kèm CV)"
                                 );
 
+                                _logger.LogInformation("📧 [APPLY-EMAIL] Đang gửi email xác nhận nộp đơn đến {Email}...", applicantEmail);
                                 await scopedEmailService.SendEmailAsync(
                                     applicantEmail,
                                     $"[Xác nhận nộp hồ sơ] Vị trí {capturedJobTitle} - {capturedDeptName}",
                                     confirmationBody
                                 );
-                                _logger.LogInformation("✅ Đã gửi email xác nhận thành công cho ứng viên: {Email}", applicantEmail);
+                                _logger.LogInformation("✅ [APPLY-EMAIL] Đã gửi email xác nhận thành công cho ứng viên: {Email}", applicantEmail);
                             }
                             catch (Exception emailEx)
                             {
-                                _logger.LogError(emailEx, "❌ Lỗi khi gửi email xác nhận cho ứng viên: {Email} - Chi tiết: {Message}", applicantEmail, emailEx.Message);
+                                _logger.LogError(emailEx, "❌ [APPLY-EMAIL] Lỗi khi gửi email xác nhận cho ứng viên: {Email} - Chi tiết: {Message}", applicantEmail, emailEx.Message);
                             }
                         });
+                    }
+                    else if (!string.IsNullOrWhiteSpace(applicantEmail))
+                    {
+                        _logger.LogInformation("ℹ️ [APPLY-EMAIL] Bỏ qua gửi email thực tế cho địa chỉ thử nghiệm nội bộ: {Email}", applicantEmail);
                     }
                     // ===== END EMAIL CONFIRMATION =====
 
@@ -603,7 +615,7 @@ public class ApplicationService : IApplicationService
     {
         _logger.LogInformation("🔄 [BACKGROUND] Bắt đầu chấm điểm CV bằng AI cho ApplicationId: {Id}", applicationId);
 
-        using var scope = _serviceProvider.CreateScope();
+        using var scope = _scopeFactory.CreateScope();
         var scopedDbContext = scope.ServiceProvider.GetRequiredService<DATNContext>();
         var scopedLogger    = scope.ServiceProvider.GetRequiredService<ILogger<ApplicationService>>();
         var scopedAiService = scope.ServiceProvider.GetRequiredService<IAiMatchingService>();
@@ -1502,7 +1514,7 @@ public class ApplicationService : IApplicationService
             {
                 try
                 {
-                    using var scope = _serviceProvider.CreateScope();
+                    using var scope = _scopeFactory.CreateScope();
                     var scopedEmailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
 
                     var confirmationBody = BuildApplicationConfirmationEmailHtml(
@@ -1556,8 +1568,7 @@ public class ApplicationService : IApplicationService
         var sheetId = match.Success ? match.Groups[1].Value : sheetUrlOrId.Trim();
 
         // 2. Tải nội dung CSV từ Google Sheets
-        var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
-        var client = httpClientFactory.CreateClient();
+        var client = _httpClientFactory.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(30);
 
         var csvUrls = new[]
@@ -1677,8 +1688,7 @@ public class ApplicationService : IApplicationService
         var gidMatch = System.Text.RegularExpressions.Regex.Match(sheetUrlOrId.Trim(), @"[#&?]gid=([0-9]+)");
         var gidSuffix = gidMatch.Success ? $"&gid={gidMatch.Groups[1].Value}" : "";
 
-        var httpClientFactory = _serviceProvider.GetRequiredService<IHttpClientFactory>();
-        var client = httpClientFactory.CreateClient();
+        var client = _httpClientFactory.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(30);
 
         var csvUrls = new[]

@@ -104,8 +104,8 @@ namespace DATN.Data
                         (
                             Id                INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_InterviewBatches PRIMARY KEY,
                             JobId             UNIQUEIDENTIFIER  NULL,
-                            BatchCode         NVARCHAR(50)      NOT NULL,
-                            ScheduledDate     DATE              NULL,
+                            BatchCode         NVARCHAR(50)      NOT NULL CONSTRAINT DF_InterviewBatches_BatchCode DEFAULT ('BATCH-INIT'),
+                            ScheduledDate     DATE              NULL CONSTRAINT DF_InterviewBatches_ScheduledDate DEFAULT (CAST(GETDATE() AS DATE)),
                             ShiftSlot         NVARCHAR(30)      NULL CONSTRAINT DF_InterviewBatches_ShiftSlot DEFAULT ('MORNING_08_11'),
                             ShiftName         NVARCHAR(100)     NULL CONSTRAINT DF_InterviewBatches_ShiftName DEFAULT (N'Ca phỏng vấn tập trung'),
                             LocationRoom      NVARCHAR(200)     NULL CONSTRAINT DF_InterviewBatches_LocationRoom DEFAULT (N'Hội trường tuyển dụng A'),
@@ -118,6 +118,10 @@ namespace DATN.Data
                     END
                     ELSE
                     BEGIN
+                        -- Drop index phụ thuộc trước khi ALTER COLUMN để không bị lỗi Error 5074
+                        IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_InterviewBatches_Interviewer_Slot' AND object_id = OBJECT_ID('dbo.InterviewBatches'))
+                            DROP INDEX IX_InterviewBatches_Interviewer_Slot ON dbo.InterviewBatches;
+
                         IF COL_LENGTH('dbo.InterviewBatches', 'JobId') IS NULL ALTER TABLE dbo.InterviewBatches ADD JobId UNIQUEIDENTIFIER NULL;
                         IF COL_LENGTH('dbo.InterviewBatches', 'BatchCode') IS NULL ALTER TABLE dbo.InterviewBatches ADD BatchCode NVARCHAR(50) NULL;
                         IF COL_LENGTH('dbo.InterviewBatches', 'ScheduledDate') IS NULL ALTER TABLE dbo.InterviewBatches ADD ScheduledDate DATE NULL;
@@ -133,6 +137,8 @@ namespace DATN.Data
                         -- Đổi cột thành NULL để EF Core mapping không bị SqlNullValueException
                         ALTER TABLE dbo.InterviewBatches ALTER COLUMN ScheduledDate DATE NULL;
                         ALTER TABLE dbo.InterviewBatches ALTER COLUMN ShiftSlot NVARCHAR(30) NULL;
+                        ALTER TABLE dbo.InterviewBatches ALTER COLUMN ShiftName NVARCHAR(100) NULL;
+                        ALTER TABLE dbo.InterviewBatches ALTER COLUMN LocationRoom NVARCHAR(200) NULL;
                         ALTER TABLE dbo.InterviewBatches ALTER COLUMN MaxCapacity INT NULL;
                         ALTER TABLE dbo.InterviewBatches ALTER COLUMN CurrentCount INT NULL;
                         ALTER TABLE dbo.InterviewBatches ALTER COLUMN Status NVARCHAR(30) NULL;
@@ -142,6 +148,7 @@ namespace DATN.Data
                         IF COL_LENGTH('dbo.InterviewBatches', 'CurrentEnrolled') IS NOT NULL
                             EXEC('UPDATE dbo.InterviewBatches SET CurrentCount = CurrentEnrolled WHERE CurrentCount IS NULL OR CurrentCount = 0');
 
+                        EXEC('UPDATE dbo.InterviewBatches SET ScheduledDate = CAST(GETDATE() AS DATE) WHERE ScheduledDate IS NULL');
                         EXEC('UPDATE dbo.InterviewBatches SET ShiftSlot = ''MORNING_08_11'' WHERE ShiftSlot IS NULL');
                         EXEC('UPDATE dbo.InterviewBatches SET ShiftName = N''Ca phỏng vấn tập trung'' WHERE ShiftName IS NULL');
                         EXEC('UPDATE dbo.InterviewBatches SET LocationRoom = N''Hội trường tuyển dụng A'' WHERE LocationRoom IS NULL');
@@ -149,6 +156,11 @@ namespace DATN.Data
                         EXEC('UPDATE dbo.InterviewBatches SET CurrentCount = 0 WHERE CurrentCount IS NULL');
                         EXEC('UPDATE dbo.InterviewBatches SET Status = ''Open'' WHERE Status IS NULL');
                         EXEC('UPDATE dbo.InterviewBatches SET CreatedAt = SYSUTCDATETIME() WHERE CreatedAt IS NULL');
+                        EXEC('UPDATE dbo.InterviewBatches SET BatchCode = ''BATCH-'' + CAST(Id AS VARCHAR) WHERE BatchCode IS NULL');
+
+                        -- Tạo lại index an toàn sau khi đã chuẩn hóa cột
+                        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_InterviewBatches_Interviewer_Slot' AND object_id = OBJECT_ID('dbo.InterviewBatches'))
+                            CREATE INDEX IX_InterviewBatches_Interviewer_Slot ON dbo.InterviewBatches(InterviewerUserId, ScheduledDate, ShiftSlot) WHERE InterviewerUserId IS NOT NULL;
                     END;
                 "),
                 ("CandidateBlacklists table and columns", @"

@@ -37,7 +37,7 @@ public interface IGeminiApiKeyProvider
     /// <summary>
     /// Báo cáo một request dùng key bị lỗi (status 429/5xx hoặc exception)
     /// </summary>
-    void ReportFailure(string apiKey);
+    void ReportFailure(string apiKey, string? errorMessage = null);
 
     /// <summary>
     /// Báo cáo một request dùng key thành công
@@ -45,9 +45,14 @@ public interface IGeminiApiKeyProvider
     void ReportSuccess(string apiKey);
 
     /// <summary>
-    /// Lấy thống kê các API keys (preview, success/failure counts, disabled flag, assigned modules)
+    /// Lấy thống kê các API keys (preview, success/failure counts, disabled flag, assigned modules, health status)
     /// </summary>
     List<Models.GeminiKeyStat> GetKeyStats();
+
+    /// <summary>
+    /// Thực hiện Live Health Check trực tiếp tới Google Gemini API cho toàn bộ các Key
+    /// </summary>
+    Task<List<Models.GeminiKeyStat>> CheckAllKeysHealthAsync();
 
     /// <summary>
     /// Vô hiệu hóa Gemini API key theo index

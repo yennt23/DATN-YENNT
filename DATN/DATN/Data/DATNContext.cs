@@ -153,6 +153,30 @@ public partial class DATNContext : DbContext
         });
 
         // ════════════════════════════════════════════════════════════════════
+        // INTERVIEW BATCH ENTITY - Ca Phỏng Vấn Tập Trung
+        // ════════════════════════════════════════════════════════════════════
+        modelBuilder.Entity<InterviewBatch>(entity =>
+        {
+            entity.ToTable("InterviewBatches");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.Property(e => e.BatchCode).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.ScheduledDate).HasColumnType("date").IsRequired(false);
+            entity.Property(e => e.ShiftSlot).HasMaxLength(30).IsRequired(false).HasDefaultValue("MORNING_08_11");
+            entity.Property(e => e.ShiftName).HasMaxLength(100).IsRequired(false).HasDefaultValue("Ca phỏng vấn tập trung");
+            entity.Property(e => e.LocationRoom).HasMaxLength(200).IsRequired(false).HasDefaultValue("Hội trường tuyển dụng A");
+            entity.Property(e => e.MaxCapacity).HasDefaultValue(50);
+            entity.Property(e => e.CurrentCount).HasDefaultValue(0);
+            entity.Property(e => e.Status).HasMaxLength(30).IsRequired(false).HasDefaultValue("Open");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.HasOne(e => e.Job)
+                  .WithMany()
+                  .HasForeignKey(e => e.JobId)
+                  .IsRequired(false)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ════════════════════════════════════════════════════════════════════
         // DEPARTMENT ENTITY - Matrix Organization
         // ════════════════════════════════════════════════════════════════════
         modelBuilder.Entity<Department>(entity =>

@@ -443,7 +443,7 @@ NẾU người dùng hỏi ngoài phạm vi (chính trị, giải trí không li
                     throw new HttpRequestException("Failed to call Gemini after multiple attempts");
                 }
 
-                var baseUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse";
+                var baseUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse";
                 _logger.LogInformation($"[Gemini AI] Gọi API... Tokens ước tính: {payloadJson.Length} chars.");
                 HttpResponseMessage response;
                 try

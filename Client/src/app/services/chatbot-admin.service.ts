@@ -31,6 +31,9 @@ export interface GeminiKeyStat {
     failureCount: number;
     disabled: boolean;
     assignedModules?: string[];
+    status?: string;
+    errorMessage?: string;
+    lastCheckedAt?: string;
 }
 
 export interface ModuleInfo {
@@ -88,6 +91,10 @@ export class ChatbotAdminService {
 
     getGeminiKeys(): Observable<GeminiKeyStat[]> {
         return this.http.get<GeminiKeyStat[]>(`${environment.apiUrl}/admin/gemini-keys`, { headers: this.getHeaders() });
+    }
+
+    checkGeminiKeysHealth(): Observable<GeminiKeyStat[]> {
+        return this.http.post<GeminiKeyStat[]>(`${environment.apiUrl}/admin/gemini-keys/check-health`, {}, { headers: this.getHeaders() });
     }
 
     getSupportedModules(): Observable<ModuleInfo[]> {

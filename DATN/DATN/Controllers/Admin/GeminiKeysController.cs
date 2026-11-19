@@ -19,9 +19,21 @@ public class GeminiKeysController : ControllerBase
     }
 
     [HttpGet]
-    public IActionResult Get()
+    public async Task<IActionResult> Get()
     {
         var stats = _provider.GetKeyStats();
+        // Nếu các key chưa từng được kiểm tra sức khỏe thì tự động kiểm tra ngay
+        if (stats.Any(s => s.LastCheckedAt == null && !s.Disabled))
+        {
+            stats = await _provider.CheckAllKeysHealthAsync();
+        }
+        return Ok(stats);
+    }
+
+    [HttpPost("check-health")]
+    public async Task<IActionResult> CheckHealth()
+    {
+        var stats = await _provider.CheckAllKeysHealthAsync();
         return Ok(stats);
     }
 

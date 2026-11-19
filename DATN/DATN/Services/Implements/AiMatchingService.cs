@@ -117,21 +117,8 @@ public class AiMatchingService : IAiMatchingService
                 }
             };
 
-            var jsonContent = JsonSerializer.Serialize(requestBody);
-            var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-
-            // Gọi Gemini API - Sử dụng Gemini 2.5 Flash
-            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
-            var response = await _httpClient.PostAsync(apiUrl, content);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Gemini API error: {StatusCode} - {Error}", response.StatusCode, errorContent);
-                throw new HttpRequestException($"Gemini API returned {response.StatusCode}");
-            }
-
-            var responseContent = await response.Content.ReadAsStringAsync();
+            // Gọi Gemini API với cơ chế tự động Fallback Model và báo cáo tình trạng Key
+            var responseContent = await PostGeminiContentAsync(apiKey, requestBody);
             _logger.LogDebug("Gemini API response: {Response}", responseContent);
 
             // Parse response
@@ -380,20 +367,7 @@ Yêu cầu:
                 }
             };
 
-            var jsonContent = System.Text.Json.JsonSerializer.Serialize(requestBody);
-            var content = new StringContent(jsonContent, System.Text.Encoding.UTF8, "application/json");
-
-            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
-            var response = await _httpClient.PostAsync(apiUrl, content);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Gemini API error: {StatusCode} - {Error}", response.StatusCode, errorContent);
-                throw new HttpRequestException($"Gemini API returned {response.StatusCode}");
-            }
-
-            var responseContent = await response.Content.ReadAsStringAsync();
+            var responseContent = await PostGeminiContentAsync(apiKey, requestBody);
             
             // Parse response để lấy text
             using var document = System.Text.Json.JsonDocument.Parse(responseContent);
@@ -535,20 +509,7 @@ Chỉ trả về đoạn văn đó (2-3 câu), không viết tiêu đề hay k�
                 }
             };
 
-            var jsonContent = JsonSerializer.Serialize(requestBody);
-            var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-
-            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
-            var response = await _httpClient.PostAsync(apiUrl, content);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Gemini API error: {StatusCode} - {Error}", response.StatusCode, errorContent);
-                throw new HttpRequestException($"Gemini API trả về lỗi {response.StatusCode}");
-            }
-
-            var responseContent = await response.Content.ReadAsStringAsync();
+            var responseContent = await PostGeminiContentAsync(apiKey, requestBody);
             
             // Parse response
             using var document = JsonDocument.Parse(responseContent);
@@ -629,20 +590,7 @@ KHÔNG thêm markdown code blocks.
                 }
             };
 
-            var jsonContent = JsonSerializer.Serialize(requestBody);
-            var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-
-            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
-            var response = await _httpClient.PostAsync(apiUrl, content);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Gemini API error: {StatusCode} - {Error}", response.StatusCode, errorContent);
-                throw new HttpRequestException($"Gemini API trả về lỗi {response.StatusCode}");
-            }
-
-            var responseContent = await response.Content.ReadAsStringAsync();
+            var responseContent = await PostGeminiContentAsync(apiKey, requestBody);
             
             // Parse response
             using var document = JsonDocument.Parse(responseContent);
@@ -722,20 +670,7 @@ Trả về kết quả dưới dạng JSON với cấu trúc sau (KHÔNG thêm m
                 }
             };
 
-            var jsonContent = JsonSerializer.Serialize(requestBody);
-            var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-
-            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
-            var response = await _httpClient.PostAsync(apiUrl, content);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Gemini API error: {StatusCode} - {Error}", response.StatusCode, errorContent);
-                throw new HttpRequestException($"Gemini API trả về lỗi {response.StatusCode}");
-            }
-
-            var responseContent = await response.Content.ReadAsStringAsync();
+            var responseContent = await PostGeminiContentAsync(apiKey, requestBody);
             
             // Parse response
             using var document = JsonDocument.Parse(responseContent);
@@ -775,6 +710,44 @@ Trả về kết quả dưới dạng JSON với cấu trúc sau (KHÔNG thêm m
   ""assessment"": ""Không thể đánh giá câu trả lời do lỗi hệ thống. Vui lòng thử lại sau.""
 }";
         }
+    }
+
+    private async Task<string> PostGeminiContentAsync(string apiKey, object requestBody)
+    {
+        var jsonContent = JsonSerializer.Serialize(requestBody);
+        var modelsToTry = new[] { "gemini-2.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash-lite" };
+        HttpResponseMessage? response = null;
+        string? lastError = null;
+
+        foreach (var model in modelsToTry)
+        {
+            try
+            {
+                var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
+                using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+                response = await _httpClient.PostAsync(apiUrl, content);
+                if (response.IsSuccessStatusCode)
+                {
+                    _apiKeyProvider.ReportSuccess(apiKey);
+                    return await response.Content.ReadAsStringAsync();
+                }
+
+                lastError = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning("Gemini API call with model {Model} failed: {StatusCode} - {Error}", model, response.StatusCode, lastError);
+                if (response.StatusCode == System.Net.HttpStatusCode.BadRequest || (int)response.StatusCode == 429)
+                {
+                    break;
+                }
+            }
+            catch (Exception ex)
+            {
+                lastError = ex.Message;
+                _logger.LogWarning(ex, "Lỗi gọi model {Model}", model);
+            }
+        }
+
+        _apiKeyProvider.ReportFailure(apiKey, lastError);
+        throw new HttpRequestException($"Gemini API error: {response?.StatusCode} - {lastError}");
     }
 }
 

@@ -23,6 +23,7 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
     isLoading = false;
     keyStats: GeminiKeyStat[] = [];
     isKeysLoading = false;
+    isCheckingHealth = false;
     isModalOpen = false;
     isSaving = false;
 
@@ -64,6 +65,7 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
     ngOnInit(): void {
         this.loadFaqs();
         this.loadKeyStats();
+        this.checkKeysHealth();
         this.loadSupportedModules();
         this.startKeyAutoRefresh();
     }
@@ -111,6 +113,36 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
                 this.ngZone.run(() => {
                     this.isKeysLoading = false;
                     this.toast.error('Lỗi', err.error?.message || 'Không thể tải thống kê API keys.');
+                    setTimeout(() => {
+                        this.cdr.detectChanges();
+                    });
+                });
+            }
+        });
+    }
+
+    checkKeysHealth(): void {
+        this.isCheckingHealth = true;
+        this.chatbotAdminService.checkGeminiKeysHealth().subscribe({
+            next: (items) => {
+                this.ngZone.run(() => {
+                    this.keyStats = items || [];
+                    this.isCheckingHealth = false;
+                    const errorCount = this.keyStats.filter(k => !k.disabled && k.status && k.status !== 'Healthy').length;
+                    if (errorCount > 0) {
+                        this.toast.warning('Cảnh báo Gemini Key', `Phát hiện ${errorCount} API Key đang gặp sự cố/không hợp lệ!`);
+                    } else {
+                        this.toast.success('Hoàn tất kiểm tra', 'Tất cả các Gemini API Key đang hoạt động ổn định.');
+                    }
+                    setTimeout(() => {
+                        this.cdr.detectChanges();
+                    });
+                });
+            },
+            error: (err) => {
+                this.ngZone.run(() => {
+                    this.isCheckingHealth = false;
+                    this.toast.error('Lỗi', err.error?.message || 'Không thể kiểm tra sức khỏe Gemini API keys.');
                     setTimeout(() => {
                         this.cdr.detectChanges();
                     });
@@ -270,6 +302,8 @@ export class ChatbotAdminComponent implements OnInit, OnDestroy {
         return {
             total: this.keyStats.length,
             disabled: this.keyStats.filter(k => k.disabled).length,
+            healthy: this.keyStats.filter(k => !k.disabled && (!k.status || k.status === 'Healthy')).length,
+            errorKeys: this.keyStats.filter(k => !k.disabled && k.status && k.status !== 'Healthy').length,
             failures: this.keyStats.reduce((sum, k) => sum + (k.failureCount || 0), 0),
             success: this.keyStats.reduce((sum, k) => sum + (k.successCount || 0), 0)
         };

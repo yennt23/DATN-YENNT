@@ -226,7 +226,7 @@ CHỈ trả về JSON array thuần (không markdown):
                 contents = new[] { new { parts = new[] { new { text = prompt } } } }
             };
             var jsonContent = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
+            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
 
             var response = await httpClient.PostAsync(apiUrl, jsonContent);
             if (!response.IsSuccessStatusCode)

@@ -28,7 +28,7 @@ public sealed class GeminiCvScreeningService
 
     private const int BatchSize = 5;
     private const int MaxRetryPerBatch = 3;
-    private const string GeminiModel = "gemini-1.5-flash";
+    private const string GeminiModel = "gemini-2.5-flash";
     private const string GeminiApiBase =
         "https://generativelanguage.googleapis.com/v1beta/models/{0}:generateContent?key={1}";
 
@@ -343,10 +343,31 @@ public sealed class GeminiCvScreeningService
         var jsonBody = JsonSerializer.Serialize(requestBody);
         var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
 
-        var url = string.Format(GeminiApiBase, GeminiModel, apiKey);
         var client = _httpClientFactory.CreateClient("GeminiClient");
+        var modelsToTry = new[] { GeminiModel, "gemini-3-flash-preview", "gemini-2.5-flash-lite" };
+        HttpResponseMessage? response = null;
 
-        var response = await client.PostAsync(url, content, cancellationToken);
+        foreach (var model in modelsToTry)
+        {
+            var url = string.Format(GeminiApiBase, model, apiKey);
+            using var reqContent = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+            response = await client.PostAsync(url, reqContent, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                break;
+            }
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                _logger.LogWarning("Model {Model} trả về 404 cho key {Key}, chuyển sang model kế tiếp", model, apiKey[..Math.Min(6, apiKey.Length)]);
+                continue;
+            }
+            break;
+        }
+
+        if (response == null)
+        {
+            throw new Exception("Không thể kết nối tới Gemini API.");
+        }
 
         // â”€â”€ Xá»­ lÃ½ lá»—i HTTP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests

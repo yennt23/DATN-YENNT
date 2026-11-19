@@ -20,20 +20,21 @@
 
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
-            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">API keys</p>
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Tổng API keys</p>
             <p class="mt-2 text-3xl font-black text-slate-900 dark:text-white">{{ keySummary.total }}</p>
         </div>
         <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
-            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Disabled</p>
-            <p class="mt-2 text-3xl font-black text-rose-600">{{ keySummary.disabled }}</p>
+            <p class="text-xs uppercase tracking-[0.2em] text-emerald-600 font-semibold">Đang hoạt động tốt</p>
+            <p class="mt-2 text-3xl font-black text-emerald-600">{{ keySummary.healthy }}</p>
+        </div>
+        <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm"
+            [class.border-rose-300]="keySummary.errorKeys > 0" [class.bg-rose-50/30]="keySummary.errorKeys > 0">
+            <p class="text-xs uppercase tracking-[0.2em] text-rose-600 font-semibold">Key bị lỗi / Hỏng</p>
+            <p class="mt-2 text-3xl font-black text-rose-600">{{ keySummary.errorKeys }}</p>
         </div>
         <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
-            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Success</p>
-            <p class="mt-2 text-3xl font-black text-emerald-600">{{ keySummary.success }}</p>
-        </div>
-        <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
-            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Failures</p>
-            <p class="mt-2 text-3xl font-black text-amber-600">{{ keySummary.failures }}</p>
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Đã vô hiệu hóa</p>
+            <p class="mt-2 text-3xl font-black text-slate-600 dark:text-slate-400">{{ keySummary.disabled }}</p>
         </div>
     </div>
 
@@ -41,10 +42,15 @@
         <div class="flex items-center justify-between mb-4 gap-4 flex-wrap">
             <div>
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Gemini API Keys</h3>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Tình trạng runtime của các Gemini API keys
-                    (preview, failures, disabled)</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Tình trạng runtime và kết quả xác thực trực tiếp của các Gemini API keys</p>
             </div>
             <div class="flex items-center gap-2">
+                <button (click)="checkKeysHealth()" [disabled]="isCheckingHealth"
+                    class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors flex items-center gap-1 shadow-sm"
+                    title="Kiểm tra trực tiếp tình trạng từng Key từ Google Gemini API">
+                    <span class="material-symbols-outlined text-[18px]" [class.animate-spin]="isCheckingHealth">sync</span>
+                    <span>{{ isCheckingHealth ? 'Đang kiểm tra...' : 'Kiểm tra Key' }}</span>
+                </button>
                 <button (click)="openAddKeyModal()"
                     class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-1 shadow-sm">
                     <span class="material-symbols-outlined text-[18px]">add</span>
@@ -62,6 +68,21 @@
             Chưa có dữ liệu key stats.
         </div>
         <div *ngIf="!isKeysLoading && keyStats.length > 0" class="overflow-x-auto">
+            <!-- Banner cảnh báo nếu có key bị lỗi -->
+            <div *ngIf="keySummary.errorKeys > 0" class="mb-4 p-4 rounded-xl border border-rose-300 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 flex items-start gap-3">
+                <span class="material-symbols-outlined text-rose-600 text-[24px] shrink-0 mt-0.5">warning</span>
+                <div class="flex-1">
+                    <h4 class="text-sm font-bold text-rose-900 dark:text-rose-200">Cảnh báo Gemini API: Phát hiện {{ keySummary.errorKeys }} key bị lỗi</h4>
+                    <p class="text-xs text-rose-700 dark:text-rose-300 mt-0.5">
+                        Hệ thống đã tự động định tuyến các phân hệ AI sang những key hoạt động tốt còn lại. Vui lòng kiểm tra các dòng màu đỏ bên dưới để cập nhật hoặc xóa key lỗi.
+                    </p>
+                </div>
+                <button (click)="checkKeysHealth()" [disabled]="isCheckingHealth" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition-colors shrink-0 flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[16px]" [class.animate-spin]="isCheckingHealth">sync</span>
+                    <span>{{ isCheckingHealth ? 'Đang kiểm tra...' : 'Kiểm tra lại' }}</span>
+                </button>
+            </div>
+
             <table class="w-full text-sm">
                 <thead class="text-left text-xs text-gray-500 uppercase border-b border-gray-200 dark:border-slate-800">
                     <tr>
@@ -75,8 +96,22 @@
                 </thead>
                 <tbody class="divide-y divide-gray-200 dark:divide-slate-800">
                     <tr *ngFor="let k of keyStats; trackBy: trackByKeyPreview"
-                        class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                        <td class="px-3 py-4 font-medium text-slate-900 dark:text-white">{{ k.keyPreview }}</td>
+                        class="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+                        [class.bg-rose-50/70]="!k.disabled && k.status && k.status !== 'Healthy'"
+                        [class.dark:bg-rose-950/30]="!k.disabled && k.status && k.status !== 'Healthy'"
+                        [class.border-l-4]="!k.disabled && k.status && k.status !== 'Healthy'"
+                        [class.border-l-rose-500]="!k.disabled && k.status && k.status !== 'Healthy'">
+                        <td class="px-3 py-4 font-medium text-slate-900 dark:text-white">
+                            <div class="flex items-center gap-1.5">
+                                <span [class.text-rose-700]="!k.disabled && k.status && k.status !== 'Healthy'" [class.font-bold]="!k.disabled && k.status && k.status !== 'Healthy'">{{ k.keyPreview }}</span>
+                                <span *ngIf="k.status === 'InvalidKey'" class="material-symbols-outlined text-rose-600 text-[18px]" title="Key không hợp lệ">error</span>
+                                <span *ngIf="k.status === 'ModelNotFound'" class="material-symbols-outlined text-amber-600 text-[18px]" title="Model không hỗ trợ">warning</span>
+                            </div>
+                            <div *ngIf="k.errorMessage" class="text-xs text-rose-700 dark:text-rose-300 font-medium mt-1 p-1.5 bg-rose-100/80 dark:bg-rose-950/60 rounded border border-rose-200 dark:border-rose-900/60 max-w-sm flex items-start gap-1">
+                                <span class="material-symbols-outlined text-[15px] shrink-0 text-rose-600 mt-0.5">report_problem</span>
+                                <span>{{ k.errorMessage }}</span>
+                            </div>
+                        </td>
                         <td class="px-3 py-4">
                             <div class="flex flex-wrap gap-1.5 max-w-xs">
                                 <span *ngFor="let m of k.assignedModules"
@@ -100,13 +135,40 @@
                         <td class="px-3 py-4 text-emerald-600 font-semibold">{{ k.successCount }}</td>
                         <td class="px-3 py-4 text-amber-600 font-semibold">{{ k.failureCount }}</td>
                         <td class="px-3 py-4">
-                            <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold"
-                                [class.bg-rose-100]="k.disabled" [class.text-rose-700]="k.disabled"
-                                [class.dark:bg-rose-900/30]="k.disabled" [class.dark:text-rose-300]="k.disabled"
-                                [class.bg-emerald-100]="!k.disabled" [class.text-emerald-700]="!k.disabled"
-                                [class.dark:bg-emerald-900/30]="!k.disabled"
-                                [class.dark:text-emerald-300]="!k.disabled">
-                                {{ k.disabled ? 'Disabled' : 'Healthy' }}
+                            <!-- Disabled -->
+                            <span *ngIf="k.disabled" class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                Vô hiệu hóa
+                            </span>
+                            <!-- Invalid Key -->
+                            <span *ngIf="!k.disabled && k.status === 'InvalidKey'" class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                                <span class="inline-block w-1.5 h-1.5 rounded-full bg-rose-600 animate-pulse"></span>
+                                Lỗi Key (Invalid)
+                            </span>
+                            <!-- Model 404 -->
+                            <span *ngIf="!k.disabled && k.status === 'ModelNotFound'" class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+                                Model 404 (Đã định tuyến)
+                            </span>
+                            <!-- Forbidden 403 -->
+                            <span *ngIf="!k.disabled && k.status === 'Forbidden'" class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                Chưa bật Billing (403)
+                            </span>
+                            <!-- Rate Limited 429 -->
+                            <span *ngIf="!k.disabled && k.status === 'RateLimited'" class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                Hết Quota (429)
+                            </span>
+                            <!-- Service Unavailable 503 -->
+                            <span *ngIf="!k.disabled && k.status === 'ServiceUnavailable'" class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300 border border-orange-300 dark:border-orange-800">
+                                Quá tải (503)
+                            </span>
+                            <!-- General Error -->
+                            <span *ngIf="!k.disabled && k.status === 'Error'" class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                                Gặp lỗi
+                            </span>
+                            <!-- Healthy -->
+                            <span *ngIf="!k.disabled && (!k.status || k.status === 'Healthy')" class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                                Hoạt động tốt
                             </span>
                         </td>
                         <td class="px-3 py-4 text-right">

@@ -161,9 +161,10 @@
           <tr class="bg-slate-50/90 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             <th class="p-3.5 w-10 text-center">
               <input type="checkbox"
-                [checked]="selectedCount() > 0 && selectedCount() === filteredApplications().length"
+                [checked]="selectableVisibleCount() > 0 && selectedCount() === selectableVisibleCount()"
+                [disabled]="selectableVisibleCount() === 0"
                 (change)="toggleSelectAllVisible($event)"
-                class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer" />
             </th>
             <th class="p-3.5">Ứng viên &amp; Nguồn hồ sơ</th>
             <th class="p-3.5">Vị trí &amp; Phân xưởng</th>
@@ -178,10 +179,17 @@
             class="hover:bg-indigo-50/40 dark:hover:bg-slate-800/50 transition cursor-pointer">
             <!-- Checkbox -->
             <td class="p-3.5 text-center" (click)="$event.stopPropagation()">
+              @if (isAlreadyScheduled(app)) {
+              <input type="checkbox"
+                disabled
+                [title]="'Ứng viên đã được xếp lịch phỏng vấn (' + (app.interviewBatchCode || 'Đã có ca PV') + ')'"
+                class="w-4 h-4 rounded border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-400 opacity-40 cursor-not-allowed" />
+              } @else {
               <input type="checkbox"
                 [checked]="selectedIds().has(app.applicationId)"
-                (change)="toggleSelection(app.applicationId, $event)"
-                class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                (change)="toggleSelection(app, $event)"
+                class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
+              }
             </td>
 
             <!-- Cột Ứng viên: Họ tên, SĐT, Năm sinh + Badge nguồn -->
