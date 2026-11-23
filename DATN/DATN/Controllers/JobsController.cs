@@ -457,7 +457,7 @@ CHỈ trả về JSON thuần (không markdown, không code block):
                 {
                     contents = new[]
                     {
-                        new { parts = new[] { new { text = prompt } } }
+                        new { role = "user", parts = new[] { new { text = prompt } } }
                     }
                 };
 
@@ -468,7 +468,7 @@ CHỈ trả về JSON thuần (không markdown, không code block):
                 for (int attempt = 0; attempt < 3; attempt++)
                 {
                     var currentKey = attempt == 0 ? apiKey : _apiKeyProvider.GetNextApiKey();
-                    var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={currentKey}";
+                    var apiUrl = DATN.Services.Implements.GeminiApiKeyProvider.BuildGenerateContentUrl(currentKey, "gemini-2.5-flash");
                     
                     response = await httpClient.PostAsync(apiUrl, jsonContent);
                     if (response.IsSuccessStatusCode) break;

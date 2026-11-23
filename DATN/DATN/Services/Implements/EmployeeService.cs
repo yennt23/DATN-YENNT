@@ -17,7 +17,7 @@ namespace DATN.Services.Implements
 
         public async Task<List<EmployeeDto>> GetEmployeesAsync()
         {
-            var staffRoles = new[] { "ADMIN", "MANAGER", "HR", "INTERVIEWER" };
+            var staffRoles = new[] { "ADMIN", "MANAGER", "HR", "INTERVIEWER", "STAFF" };
 
             var employees = await _context.Users
                 .IgnoreQueryFilters()
@@ -39,7 +39,7 @@ namespace DATN.Services.Implements
                     RoleName = u.UserRoles.Select(ur => ur.Role.Code).FirstOrDefault() == "ADMIN" ? "Ban Giám Đốc" :
                                u.UserRoles.Select(ur => ur.Role.Code).FirstOrDefault() == "MANAGER" ? "Trưởng Phòng" :
                                u.UserRoles.Select(ur => ur.Role.Code).FirstOrDefault() == "HR" ? "Chuyên viên Nhân sự" :
-                               u.UserRoles.Select(ur => ur.Role.Code).FirstOrDefault() == "INTERVIEWER" ? "Hội đồng Phỏng vấn" : "Nhân viên",
+                               u.UserRoles.Select(ur => ur.Role.Code).FirstOrDefault() == "INTERVIEWER" ? "Hội đồng Phỏng vấn" : "Nhân viên chính thức",
                     IsActive = u.IsActive,
                     CreatedAt = u.CreatedAt,
                     DepartmentId = u.DepartmentId,
@@ -50,9 +50,74 @@ namespace DATN.Services.Implements
                     SubordinatesCount = u.Subordinates.Count(),
                     LockedAt = u.LockedAt,
                     LockedByName = u.LockedByName,
-                    LockReason = u.LockReason
+                    LockReason = u.LockReason,
+                    IsHiredStaff = false
                 })
                 .ToListAsync();
+
+            // Đọc danh sách Nhân viên / Công nhân đã trúng tuyển và được cấp Mã Nhân Viên (ConvertedEmployeeCode) có sẵn trong Database (chỉ đọc, không sửa DB)
+            var hiredApps = await _context.Applications
+                .AsNoTracking()
+                .Include(a => a.Candidate)
+                .Include(a => a.Job)
+                    .ThenInclude(j => j.DepartmentNavigation)
+                .Where(a => a.ConvertedEmployeeCode != null || a.Status == "Hired")
+                .ToListAsync();
+
+            var existingEmails = new HashSet<string>(
+                employees.Where(e => !string.IsNullOrWhiteSpace(e.Email)).Select(e => e.Email.Trim().ToLowerInvariant())
+            );
+
+            foreach (var app in hiredApps)
+            {
+                var email = !string.IsNullOrWhiteSpace(app.ContactEmail)
+                    ? app.ContactEmail.Trim()
+                    : (app.Candidate?.Email?.Trim() ?? $"{app.ConvertedEmployeeCode?.ToLowerInvariant() ?? "nv"}@factory.local");
+
+                if (!string.IsNullOrWhiteSpace(email) && existingEmails.Contains(email.ToLowerInvariant()))
+                {
+                    var matchedEmp = employees.FirstOrDefault(e => e.Email.Equals(email, StringComparison.OrdinalIgnoreCase));
+                    if (matchedEmp != null)
+                    {
+                        matchedEmp.EmployeeCode = app.ConvertedEmployeeCode;
+                        matchedEmp.JobTitle = app.Job?.Title;
+                    }
+                    continue;
+                }
+
+                var dept = app.Job?.DepartmentNavigation;
+                var deptMgr = dept != null
+                    ? employees.FirstOrDefault(e => e.DepartmentId == dept.DepartmentId && e.Role == "MANAGER")
+                    : null;
+
+                var resolvedCreatedAt = app.LastStageChangedAt != default ? app.LastStageChangedAt : app.AppliedAt;
+
+                employees.Add(new EmployeeDto
+                {
+                    UserId = app.ApplicationId,
+                    FullName = !string.IsNullOrWhiteSpace(app.ContactName) ? app.ContactName : (app.Candidate?.FullName ?? "Nhân viên mới"),
+                    Email = email,
+                    Phone = !string.IsNullOrWhiteSpace(app.ContactPhone) ? app.ContactPhone : (app.PhoneNormalized ?? app.Candidate?.Phone ?? string.Empty),
+                    Role = "STAFF",
+                    RoleName = !string.IsNullOrWhiteSpace(app.Job?.Title) ? app.Job.Title : "Nhân viên chính thức",
+                    EmployeeCode = app.ConvertedEmployeeCode,
+                    JobTitle = app.Job?.Title,
+                    IsHiredStaff = true,
+                    IsActive = app.Status != "No_Show_Cancelled",
+                    CreatedAt = resolvedCreatedAt,
+                    DepartmentId = dept?.DepartmentId ?? app.Job?.DepartmentId,
+                    DepartmentCode = dept?.DepartmentCode ?? "PROD_LINE",
+                    DepartmentName = dept?.DepartmentName ?? "Xưởng Sản Xuất & Lắp Ráp SMT",
+                    ManagerId = deptMgr?.UserId,
+                    ManagerName = deptMgr?.FullName,
+                    SubordinatesCount = 0
+                });
+
+                if (deptMgr != null)
+                {
+                    deptMgr.SubordinatesCount++;
+                }
+            }
 
             return employees;
         }

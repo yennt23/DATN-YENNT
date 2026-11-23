@@ -103,6 +103,7 @@ public class AiMatchingService : IAiMatchingService
                 {
                     new
                     {
+                        role = "user",
                         parts = new object[] // Phải dùng object[] vì có 2 kiểu data khác nhau trong part
                         {
                             new { text = prompt },
@@ -715,38 +716,55 @@ Trả về kết quả dưới dạng JSON với cấu trúc sau (KHÔNG thêm m
     private async Task<string> PostGeminiContentAsync(string apiKey, object requestBody)
     {
         var jsonContent = JsonSerializer.Serialize(requestBody);
-        var modelsToTry = new[] { "gemini-2.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash-lite" };
+        var modelsToTry = new[] { "gemini-2.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash-lite", "gemini-2.0-flash" };
         HttpResponseMessage? response = null;
         string? lastError = null;
 
-        foreach (var model in modelsToTry)
+        // Thử tối đa 3 API key khác nhau nếu key hiện tại gặp lỗi 429 / 400 / 403
+        var currentKey = apiKey;
+        for (int keyAttempt = 0; keyAttempt < 3; keyAttempt++)
         {
-            try
+            if (keyAttempt > 0)
             {
-                var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
-                using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-                response = await _httpClient.PostAsync(apiUrl, content);
-                if (response.IsSuccessStatusCode)
+                try
                 {
-                    _apiKeyProvider.ReportSuccess(apiKey);
-                    return await response.Content.ReadAsStringAsync();
+                    currentKey = _apiKeyProvider.GetNextApiKey();
                 }
-
-                lastError = await response.Content.ReadAsStringAsync();
-                _logger.LogWarning("Gemini API call with model {Model} failed: {StatusCode} - {Error}", model, response.StatusCode, lastError);
-                if (response.StatusCode == System.Net.HttpStatusCode.BadRequest || (int)response.StatusCode == 429)
-                {
-                    break;
-                }
+                catch { break; }
             }
-            catch (Exception ex)
+
+            foreach (var model in modelsToTry)
             {
-                lastError = ex.Message;
-                _logger.LogWarning(ex, "Lỗi gọi model {Model}", model);
+                try
+                {
+                    var apiUrl = GeminiApiKeyProvider.BuildGenerateContentUrl(currentKey, model);
+                    using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+                    response = await _httpClient.PostAsync(apiUrl, content);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        _apiKeyProvider.ReportSuccess(currentKey);
+                        return await response.Content.ReadAsStringAsync();
+                    }
+
+                    lastError = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning("Gemini API call with model {Model} (keyAttempt={KeyAttempt}) failed: {StatusCode} - {Error}", model, keyAttempt + 1, response.StatusCode, lastError);
+                    if (response.StatusCode == System.Net.HttpStatusCode.BadRequest ||
+                        response.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+                        (int)response.StatusCode == 429)
+                    {
+                        _apiKeyProvider.ReportFailure(currentKey, lastError);
+                        break; // Chuyển sang key tiếp theo ở vòng lặp ngoài
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex.Message;
+                    _logger.LogWarning(ex, "Lỗi gọi model {Model}", model);
+                }
             }
         }
 
-        _apiKeyProvider.ReportFailure(apiKey, lastError);
+        _apiKeyProvider.ReportFailure(currentKey, lastError);
         throw new HttpRequestException($"Gemini API error: {response?.StatusCode} - {lastError}");
     }
 }

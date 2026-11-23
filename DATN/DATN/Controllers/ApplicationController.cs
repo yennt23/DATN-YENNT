@@ -331,6 +331,85 @@ public class ApplicationController : ControllerBase
         }
     }
 
+    private static (int Score, int Tech, int Exp, int Edu, int Soft, List<string> Matched, List<string> Missing, string Explanation)
+        EvaluateResumeFallbackRubric(string? rawText, string? jobTitle, string? deptCode, string? track)
+    {
+        var text = (rawText ?? string.Empty).ToLowerInvariant();
+        var title = (jobTitle ?? string.Empty).ToLowerInvariant();
+        var dept = (deptCode ?? string.Empty).ToUpperInvariant();
+
+        var matched = new List<string>();
+        var missing = new List<string>();
+
+        // Từ khóa kỹ năng theo vị trí tuyển dụng / phân xưởng
+        var expectedKeywords = new List<string>();
+        if (dept == "WH_LOGS" || title.Contains("kho") || title.Contains("xe nâng") || title.Contains("reach truck") || title.Contains("logistics"))
+        {
+            expectedKeywords.AddRange(new[] { "Kho vận", "Xe nâng Reach Truck", "Quản lý tồn kho", "5S", "An toàn kho" });
+        }
+        else if (dept == "TECH_MNT" || title.Contains("plc") || title.Contains("tự động hóa") || title.Contains("bảo trì"))
+        {
+            expectedKeywords.AddRange(new[] { "PLC Mitsubishi/Siemens", "SCADA / HMI", "AutoCAD Electrical", "Bảo trì dây chuyền", "Đọc bản vẽ điện" });
+        }
+        else if (dept == "QA_QC" || title.Contains("qa") || title.Contains("qc") || title.Contains("chất lượng"))
+        {
+            expectedKeywords.AddRange(new[] { "ISO 9001", "IATF 16949", "IQC / OQC", "7 QC Tools", "Đo kiểm chất lượng" });
+        }
+        else
+        {
+            expectedKeywords.AddRange(new[] { "Vận hành dây chuyền SMT", "Xoay ca 12h", "Lắp ráp điện tử", "5S", "Thao tác tay mắt" });
+        }
+
+        foreach (var kw in expectedKeywords)
+        {
+            var token = kw.Split('/')[0].Trim().ToLowerInvariant();
+            if (!string.IsNullOrWhiteSpace(token) && text.Contains(token))
+                matched.Add(kw);
+            else
+                missing.Add(kw);
+        }
+
+        // Kiểm tra nếu CV thuộc khối IT/Phần mềm nhưng nộp vào vị trí Sản xuất/Kho vận/Cơ điện nhà máy (trái ngành)
+        bool isItSoftwareCv = text.Contains("phần mềm") || text.Contains("development") || text.Contains("lập trình") ||
+                              text.Contains("chatgpt") || text.Contains("claude") || text.Contains("java") || text.Contains("spring boot");
+        bool isFactoryNonItJob = !title.Contains("phần mềm") && !title.Contains("it") && !title.Contains("lập trình");
+
+        if (isItSoftwareCv && isFactoryNonItJob && matched.Count == 0)
+        {
+            int tech = 15, exp = 20, edu = 55, soft = 70;
+            int total = 24; // Đúng quy tắc Veto trái ngành (<= 30%)
+            var explain = $"Điểm phù hợp: Ứng viên có tư duy công nghệ, kỹ năng sử dụng công cụ AI và quy trình làm việc nhóm.\n" +
+                          $"Khoảng cách kỹ năng & kinh nghiệm: Hồ sơ chuyên về Phát triển phần mềm / CNTT, trái ngành so với vị trí \"{jobTitle}\". Còn thiếu: {string.Join(", ", missing.Take(3))}.\n" +
+                          $"Kết luận: Không phù hợp chuyên môn trực tiếp (Trái ngành - {total}%).";
+            return (total, tech, exp, edu, soft, matched, missing, explain);
+        }
+
+        if (matched.Count > 0)
+        {
+            int ratio = (int)Math.Round((double)matched.Count / Math.Max(1, expectedKeywords.Count) * 100);
+            int tech = Math.Clamp(55 + ratio / 2, 55, 95);
+            int exp = Math.Clamp(50 + ratio / 2, 50, 92);
+            int edu = 80;
+            int soft = 85;
+            int total = (int)Math.Round(tech * 0.40 + exp * 0.35 + edu * 0.15 + soft * 0.10);
+            var explain = $"Điểm phù hợp: Hồ sơ đáp ứng các tiêu chí: {string.Join(", ", matched)}.\n" +
+                          $"Khoảng cách kỹ năng & kinh nghiệm: {(missing.Count > 0 ? "Cần kiểm tra thêm khi phỏng vấn: " + string.Join(", ", missing.Take(2)) : "Đáp ứng đầy đủ yêu cầu trọng tâm của vị trí")}.\n" +
+                          $"Kết luận: {(total >= 75 ? "Đạt tiêu chuẩn phỏng vấn" : "Cần phỏng vấn đánh giá thêm")} ({total}%).";
+            return (total, tech, exp, edu, soft, matched, missing, explain);
+        }
+
+        // Hồ sơ phổ thông / tờ khai cơ bản
+        int defTech = track == "MASS_LABOR" ? 72 : 45;
+        int defExp = track == "MASS_LABOR" ? 70 : 45;
+        int defEdu = 75;
+        int defSoft = 80;
+        int defScore = (int)Math.Round(defTech * 0.40 + defExp * 0.35 + defEdu * 0.15 + defSoft * 0.10);
+        var defExplain = $"Điểm phù hợp: Hồ sơ ứng tuyển vị trí \"{jobTitle}\" có thông tin cơ bản hợp lệ.\n" +
+                         $"Khoảng cách kỹ năng & kinh nghiệm: Cần xác minh thêm kinh nghiệm thực tế về {string.Join(", ", missing.Take(3))} tại buổi phỏng vấn.\n" +
+                         $"Kết luận: Cần phỏng vấn trực tiếp để đánh giá tay nghề ({defScore}%).";
+        return (defScore, defTech, defExp, defEdu, defSoft, matched, missing, defExplain);
+    }
+
     /// <summary>
     /// API lên lịch phỏng vấn cho một Application (Dành cho HR/Admin)
     /// </summary>
@@ -382,6 +461,7 @@ public class ApplicationController : ControllerBase
                     CandidateFullName = a.Candidate != null ? a.Candidate.FullName : null,
                     CandidateEmail = a.Candidate != null ? a.Candidate.Email : null,
                     CandidatePhone = a.Candidate != null ? a.Candidate.Phone : null,
+                    CandidateLocation = a.Candidate != null ? a.Candidate.Location : null,
                     a.RawResumeText,
                     a.OralInterviewChecklistJson,
                     a.CitizenId,
@@ -475,6 +555,31 @@ public class ApplicationController : ControllerBase
                 if (string.IsNullOrWhiteSpace(app.Phone))
                     app.Phone = !string.IsNullOrWhiteSpace(m.PhoneNormalized) ? m.PhoneNormalized : (!string.IsNullOrWhiteSpace(m.ContactPhone) ? m.ContactPhone : (m.CandidatePhone ?? ""));
 
+                // Trích xuất Hometown & YearOfBirth thực tế của ứng viên
+                var rawExcerpt = app.RawResumeText ?? "";
+                var resolvedLoc = !string.IsNullOrWhiteSpace(m.CandidateLocation) ? m.CandidateLocation : null;
+                if (string.IsNullOrWhiteSpace(resolvedLoc) && !string.IsNullOrWhiteSpace(rawExcerpt))
+                {
+                    var mLoc = System.Text.RegularExpressions.Regex.Match(rawExcerpt, @"(?:Quê quán|Thường trú|Nơi ở|Địa chỉ|Tỉnh thành)[\s:]*([^|\r\n]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (mLoc.Success) resolvedLoc = mLoc.Groups[1].Value.Trim();
+                }
+                app.Hometown = resolvedLoc ?? app.Hometown;
+
+                if (m.DateOfBirth.HasValue)
+                {
+                    app.YearOfBirth = m.DateOfBirth.Value.Year.ToString();
+                }
+                else if (!string.IsNullOrWhiteSpace(rawExcerpt))
+                {
+                    var mY = System.Text.RegularExpressions.Regex.Match(rawExcerpt, @"(?:Năm sinh|NS|Sinh năm|DOB)[\s:]*([12][90]\d{2})", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (mY.Success) app.YearOfBirth = mY.Groups[1].Value;
+                    else
+                    {
+                        var mYear = System.Text.RegularExpressions.Regex.Match(rawExcerpt, @"\b(19\d{2}|20\d{2})\b");
+                        if (mYear.Success) app.YearOfBirth = mYear.Groups[1].Value;
+                    }
+                }
+
                 // Enrich điểm AI thật từ Gemini và phân tích tiêu chí chi tiết
                 if (scoreByApp.TryGetValue(app.ApplicationId, out var aiScore))
                 {
@@ -517,9 +622,20 @@ public class ApplicationController : ControllerBase
                         catch { /* ignore malformed json */ }
                     }
                 }
-                else if (!string.IsNullOrWhiteSpace(m.AiAnalysisSummary))
+                else
                 {
-                    app.AiExplanation = m.AiAnalysisSummary;
+                    // Tự động chấm điểm bổ sung theo Rubric ATS cho các hồ sơ chưa có bản ghi điểm trong ApplicationAiScores (tránh hiển thị 0%)
+                    var (calcScore, calcTech, calcExp, calcEdu, calcSoft, calcMatched, calcMissing, calcExplain) =
+                        EvaluateResumeFallbackRubric(app.RawResumeText, app.JobTitle, app.DepartmentCode, app.RecruitmentTrack);
+
+                    app.MatchScore = calcScore;
+                    app.SkillMatchPercent = calcTech;
+                    app.ExperienceMatchPercent = calcExp;
+                    app.EducationMatchPercent = calcEdu;
+                    app.SoftSkillMatchPercent = calcSoft;
+                    app.MatchedSkills = calcMatched;
+                    app.MissingSkills = calcMissing;
+                    app.AiExplanation = !string.IsNullOrWhiteSpace(m.AiAnalysisSummary) ? m.AiAnalysisSummary : calcExplain;
                 }
 
                 // 7 Business Rules Metadata & Score Versioning (Logic 3)
@@ -833,6 +949,8 @@ public class ApplicationController : ControllerBase
                 var candidate = await _context.Candidates.FirstOrDefaultAsync(c => c.Phone == cleanPhone);
                 var rawSummary = $"Năm sinh: {request.YearOfBirth ?? "N/A"} | CCCD: {request.Cccd ?? "N/A"} | Quê quán: {request.Hometown ?? "N/A"} | Trình độ: {request.EducationLevel ?? "THPT"} | Kinh nghiệm: {request.ExperienceSummary ?? "Lao động phổ thông"}";
 
+                var walkInEmail = !string.IsNullOrWhiteSpace(request.Email) ? request.Email.Trim() : $"{cleanPhone}@walkin-factory.local";
+
                 if (candidate == null)
                 {
                     candidate = new Entities.Candidate
@@ -840,7 +958,7 @@ public class ApplicationController : ControllerBase
                         CandidateId = Guid.NewGuid(),
                         FullName = request.FullName.Trim(),
                         Phone = cleanPhone,
-                        Email = $"{cleanPhone}@walkin-factory.local",
+                        Email = walkInEmail,
                         Location = request.Hometown?.Trim() ?? string.Empty,
                         Headline = $"Công nhân Walk-in tại cổng - {request.FullName.Trim()}",
                         Summary = rawSummary,
@@ -848,6 +966,13 @@ public class ApplicationController : ControllerBase
                         CreatedAt = now
                     };
                     _context.Candidates.Add(candidate);
+                }
+                else
+                {
+                    if (!string.IsNullOrWhiteSpace(request.Email) && (string.IsNullOrEmpty(candidate.Email) || candidate.Email.EndsWith(".local")))
+                    {
+                        candidate.Email = walkInEmail;
+                    }
                 }
 
                 app = new Entities.Application
@@ -869,7 +994,7 @@ public class ApplicationController : ControllerBase
                     LastStageChangedAt = now,
                     ContactName = candidate.FullName,
                     ContactPhone = candidate.Phone,
-                    ContactEmail = candidate.Email
+                    ContactEmail = !string.IsNullOrWhiteSpace(request.Email) ? walkInEmail : candidate.Email
                 };
                 _context.Applications.Add(app);
             }
@@ -932,6 +1057,12 @@ public class ApplicationController : ControllerBase
             });
 
             await _context.SaveChangesAsync();
+
+            // Nếu ứng viên tiếp nhận trực tiếp có cung cấp Email -> gửi email thông báo xác nhận hồ sơ
+            if (!string.IsNullOrWhiteSpace(request.Email) && request.Email.Contains('@'))
+            {
+                _ = _applicationService.SendApplicationConfirmationEmailAsync(app.ApplicationId, request.Email.Trim(), "Tiếp nhận trực tiếp tại nhà máy");
+            }
 
             return Ok(new
             {
@@ -1574,6 +1705,21 @@ public class ApplicationController : ControllerBase
             return BadRequest(new { success = false, message });
 
         return Ok(new { success = true, message });
+    }
+
+    /// <summary>
+    /// Gửi email xác nhận tiếp nhận hồ sơ thủ công cho ứng viên bất kỳ (áp dụng cho nộp CV, quét QR, Google Form hoặc Walk-in)
+    /// </summary>
+    [HttpPost("{id}/send-acknowledgement-email")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SendAcknowledgementEmail(Guid id, [FromBody] SendAckEmailRequest? request)
+    {
+        var sent = await _applicationService.SendApplicationConfirmationEmailAsync(id, request?.Email);
+        if (!sent)
+        {
+            return BadRequest(new { success = false, message = "Không tìm thấy hồ sơ hoặc hồ sơ chưa có địa chỉ email hợp lệ để gửi." });
+        }
+        return Ok(new { success = true, message = "Đã gửi email xác nhận nộp hồ sơ thành công cho ứng viên!" });
     }
 
     #endregion

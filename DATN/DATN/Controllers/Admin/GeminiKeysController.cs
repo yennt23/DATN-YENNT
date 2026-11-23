@@ -108,7 +108,7 @@ public class GeminiKeysController : ControllerBase
         var ok = await _provider.AddKeyAsync(request.Key, request.AssignedModules);
         if (!ok)
         {
-            return BadRequest(new { message = "Thêm key thất bại. Key có thể đã tồn tại hoặc không đúng định dạng của Google Gemini API (AIzaSy...)." });
+            return BadRequest(new { message = "Thêm key thất bại. Key đã tồn tại trong danh sách hoặc chứa khoảng trắng không hợp lệ." });
         }
 
         return Ok(new { message = "Đã thêm Gemini API key mới và lưu vào appsettings.json thành công." });

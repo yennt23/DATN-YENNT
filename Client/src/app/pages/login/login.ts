@@ -113,7 +113,7 @@ export class Login implements AfterViewInit {
     this.authService.googleLogin(idToken).subscribe({
       next: (res) => {
         const token = res.token || res.Token;
-        localStorage.setItem('authToken', token);
+        this.authService.saveToken(token);
         this.navigateByToken(token);
       },
       error: (err) => {
@@ -160,9 +160,9 @@ export class Login implements AfterViewInit {
               return;
             }
 
-            // 1. Lưu Token vào localStorage
-            localStorage.setItem('authToken', token);
-            console.log(' Token đã được lưu vào localStorage');
+            // 1. Lưu Token và khởi tạo ngay CurrentUser trong AuthService
+            this.authService.saveToken(token);
+            console.log(' Token đã được lưu vào localStorage và đồng bộ CurrentUser');
 
             // 2. Verify token đã lưu thành công
             const savedToken = localStorage.getItem('authToken');

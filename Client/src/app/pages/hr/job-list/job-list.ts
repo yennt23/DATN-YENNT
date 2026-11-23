@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { JobService, JobDto, CampaignQrDto } from '../../../services/job.service';
 import { ToastService } from '../../../services/toast.service';
 import { PopupService } from '../../../services/popup.service';
+import { AuthService } from '../../../services/auth.service';
 import { CampaignQrModalComponent } from '../../../components/hr/campaign-qr-modal/campaign-qr-modal';
 
 @Component({
@@ -14,6 +15,7 @@ import { CampaignQrModalComponent } from '../../../components/hr/campaign-qr-mod
     templateUrl: './job-list.html'
 })
 export class JobListComponent implements OnInit {
+    public authService = inject(AuthService);
     private jobService = inject(JobService);
     private cdr = inject(ChangeDetectorRef);
     private toast = inject(ToastService);
@@ -81,6 +83,20 @@ export class JobListComponent implements OnInit {
 
     filterJobs(): void {
         let tempJobs = [...this.jobs()];
+
+        // Nếu là Trưởng phòng / Quản đốc (MANAGER): Chỉ hiển thị chiến dịch thuộc phòng ban / phân xưởng của mình
+        if (this.authService.isDepartmentManager()) {
+            const currentUser = this.authService.currentUser();
+            if (currentUser?.departmentId || currentUser?.departmentName) {
+                const scoped = tempJobs.filter(job =>
+                    (currentUser.departmentId && (job as any).departmentId === currentUser.departmentId) ||
+                    (currentUser.departmentName && job.departmentName && job.departmentName.toLowerCase() === currentUser.departmentName.toLowerCase())
+                );
+                if (scoped.length > 0) {
+                    tempJobs = scoped;
+                }
+            }
+        }
 
         // Filter by search term
         if (this.searchTerm) {

@@ -223,10 +223,10 @@ CHỈ trả về JSON array thuần (không markdown):
             var httpClient = _httpClientFactory.CreateClient("GeminiClient");
             var payload = new
             {
-                contents = new[] { new { parts = new[] { new { text = prompt } } } }
+                contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } }
             };
             var jsonContent = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+            var apiUrl = DATN.Services.Implements.GeminiApiKeyProvider.BuildGenerateContentUrl(apiKey, "gemini-2.5-flash");
 
             var response = await httpClient.PostAsync(apiUrl, jsonContent);
             if (!response.IsSuccessStatusCode)

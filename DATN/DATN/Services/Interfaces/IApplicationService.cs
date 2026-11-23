@@ -68,4 +68,9 @@ public interface IApplicationService
     /// </summary>
     Task<ImportGoogleSheetsResultDto> SyncFromGoogleSheetUrlAsync(Guid jobId, string sheetUrlOrId, GoogleSheetColumnMappingDto? columnMapping = null);
     Task<GoogleSheetPreviewResultDto> PreviewGoogleSheetUrlAsync(string sheetUrlOrId);
+
+    /// <summary>
+    /// Gửi email xác nhận tiếp nhận hồ sơ ứng tuyển (áp dụng cho nộp CV, quét QR, Google Form hoặc HR gửi thủ công)
+    /// </summary>
+    Task<bool> SendApplicationConfirmationEmailAsync(Guid applicationId, string? emailOverride = null, string? sourceLabel = null);
 }

@@ -32,9 +32,9 @@
                 việc làm</a>
             <a class="text-sm font-medium hover:text-primary transition-colors" [routerLink]="['/candidate/jobs']">Công
                 việc</a>
-            <a class="text-sm font-medium hover:text-primary transition-colors"
+            <!-- <a class="text-sm font-medium hover:text-primary transition-colors"
                 [routerLink]="['/candidate/company']">Công
-                ty</a>
+                ty</a> -->
             <a *ngIf="userRole !== 'HR' && userRole !== 'ADMIN' && userRole !== 'INTERVIEWER'"
                 class="text-sm font-medium hover:text-primary transition-colors"
                 [routerLink]="['/candidate/my-applications']">Hồ sơ của tôi</a>

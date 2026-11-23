@@ -81,6 +81,9 @@ export interface MyApplicationDto {
     jobLocation?: string;
     appliedAt: string;
     status: string;
+    offerStatus?: string;
+    offeredSalary?: number;
+    offerExpiresAt?: string;
     lastViewedAt?: string;
     cvUrl?: string;
 }

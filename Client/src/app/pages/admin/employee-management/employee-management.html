@@ -7,7 +7,7 @@
     <div>
       <div class="flex items-center gap-2.5 flex-wrap">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
-          Cơ cấu Nhân sự &amp; Phân quyền
+          {{ isDepartmentManager() ? ('Nhân sự trực thuộc: ' + (currentUserDepartmentName() || 'Bộ phận')) : 'Cơ cấu Nhân sự & Phân quyền' }}
         </h1>
         <span *ngIf="isSuperAdmin()" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
           <span class="material-symbols-outlined text-[14px]">military_tech</span>
@@ -15,20 +15,16 @@
         </span>
         <span *ngIf="isDepartmentManager()" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
           <span class="material-symbols-outlined text-[14px]">shield_person</span>
-          MANAGER • Quản lý cấp Phòng ban
-        </span>
-        <span *ngIf="!isSuperAdmin() && !isDepartmentManager()" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
-          <span class="material-symbols-outlined text-[14px]">visibility</span>
-          HR • Chế độ tra cứu cơ cấu
+          Trưởng bộ phận • Quản lý nhân sự trực thuộc
         </span>
       </div>
       <p class="text-sm text-gray-500 dark:text-slate-400 mt-1">
-        {{ isSuperAdmin() ? 'Quản lý toàn bộ cơ cấu tổ chức & phân quyền 4 cấp: Ban Giám Đốc (Toàn quyền), Trưởng phòng, Chuyên viên HR & Hội đồng Phỏng vấn' : 'Đang xem phạm vi phòng ban của bạn: ' + currentUserDepartmentName() }}
+        {{ isSuperAdmin() ? 'Quản lý toàn bộ cơ cấu tổ chức & phân quyền 4 cấp: Ban Giám Đốc (Toàn quyền), Trưởng phòng, Chuyên viên HR & Hội đồng Phỏng vấn' : ('Danh sách các nhân viên, kỹ sư và công nhân đang làm việc dưới quyền quản lý trực tiếp của bạn tại ' + currentUserDepartmentName()) }}
       </p>
     </div>
 
     <div class="flex items-center gap-2.5 flex-shrink-0">
-      <button (click)="setViewMode(viewMode() === 'permissions' ? 'table' : 'permissions')"
+      <button *ngIf="isSuperAdmin()" (click)="setViewMode(viewMode() === 'permissions' ? 'table' : 'permissions')"
         [ngClass]="viewMode() === 'permissions'
           ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900'
           : 'bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-300 border-gray-300 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800'"
@@ -44,36 +40,36 @@
       <button (click)="openAddModal()" *ngIf="canManageEmployees()"
         class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition-all shadow-sm">
         <span class="material-symbols-outlined text-[20px]">person_add</span>
-        Thêm nhân sự
+        {{ isDepartmentManager() ? 'Thêm nhân viên thuộc phòng' : 'Thêm nhân sự' }}
       </button>
     </div>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════════════════
-       SMART ROLE BANNER: Trưởng phòng xem phạm vi cách ly
+       SMART ROLE BANNER: Trưởng phòng xem danh sách nhân viên dưới trướng
   ═══════════════════════════════════════════════════════════════════════ -->
   <div *ngIf="isDepartmentManager()"
     class="mb-5 p-4 rounded-2xl bg-gradient-to-r from-indigo-500/10 via-blue-500/10 to-cyan-500/10 border border-indigo-200/80 dark:border-indigo-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
     <div class="flex items-center gap-3">
       <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white flex items-center justify-center shadow-md flex-shrink-0">
-        <span class="material-symbols-outlined text-[22px]">shield_person</span>
+        <span class="material-symbols-outlined text-[22px]">groups</span>
       </div>
       <div>
         <h3 class="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
-          Chế độ xem Trưởng phòng
+          Trưởng bộ phận phụ trách: {{ currentUser()?.name }}
           <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-            Dữ liệu cách ly
+            {{ currentUserDepartmentName() }}
           </span>
         </h3>
         <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-          Chỉ hiển thị nhân sự trong phạm vi: <strong class="text-indigo-700 dark:text-indigo-400">{{ currentUserDepartmentName() }}</strong>
+          Hiển thị trực tiếp danh sách nhân sự, kỹ sư và công nhân đang làm việc dưới trướng tại <strong class="text-indigo-700 dark:text-indigo-400">{{ currentUserDepartmentName() }}</strong>
         </p>
       </div>
     </div>
     <div class="flex items-center gap-2">
       <span class="text-xs font-semibold px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 shadow-sm flex items-center gap-1.5">
         <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-        {{ totalEmployees() }} nhân sự trực thuộc
+        {{ totalEmployees() }} nhân viên dưới quyền
       </span>
     </div>
   </div>
@@ -81,13 +77,13 @@
   <!-- ═══════════════════════════════════════════════════════════════════════
        KPI STAT CARDS
   ═══════════════════════════════════════════════════════════════════════ -->
-  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+  <div [ngClass]="isDepartmentManager() ? 'grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6' : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6'">
     <div class="bg-white dark:bg-slate-900 rounded-xl p-3.5 border border-gray-100 dark:border-slate-800 shadow-sm flex items-center gap-3">
       <div class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center flex-shrink-0">
         <span class="material-symbols-outlined text-[22px]">group</span>
       </div>
       <div>
-        <p class="text-xs text-gray-500 dark:text-slate-400 font-medium leading-tight">Tổng nhân sự</p>
+        <p class="text-xs text-gray-500 dark:text-slate-400 font-medium leading-tight">{{ isDepartmentManager() ? 'Nhân viên dưới quyền' : 'Tổng nhân sự' }}</p>
         <p class="text-xl font-extrabold text-gray-900 dark:text-white leading-tight">{{ totalEmployees() }}</p>
       </div>
     </div>
@@ -102,7 +98,7 @@
       </div>
     </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-xl p-3.5 border border-gray-100 dark:border-slate-800 shadow-sm flex items-center gap-3">
+    <div *ngIf="!isDepartmentManager()" class="bg-white dark:bg-slate-900 rounded-xl p-3.5 border border-gray-100 dark:border-slate-800 shadow-sm flex items-center gap-3">
       <div class="w-10 h-10 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 flex items-center justify-center flex-shrink-0">
         <span class="material-symbols-outlined text-[22px]">manage_accounts</span>
       </div>
@@ -117,22 +113,32 @@
         <span class="material-symbols-outlined text-[22px]">badge</span>
       </div>
       <div>
-        <p class="text-xs text-gray-500 dark:text-slate-400 font-medium leading-tight">Chuyên viên HR</p>
+        <p class="text-xs text-gray-500 dark:text-slate-400 font-medium leading-tight">{{ isDepartmentManager() ? 'Nhân sự bộ phận' : 'Chuyên viên HR' }}</p>
         <p class="text-xl font-extrabold text-sky-600 dark:text-sky-400 leading-tight">{{ totalHr() }}</p>
       </div>
     </div>
 
     <div class="bg-white dark:bg-slate-900 rounded-xl p-3.5 border border-gray-100 dark:border-slate-800 shadow-sm flex items-center gap-3">
       <div class="w-10 h-10 rounded-lg bg-teal-50 dark:bg-teal-950/60 text-teal-600 flex items-center justify-center flex-shrink-0">
-        <span class="material-symbols-outlined text-[22px]">rate_review</span>
+        <span class="material-symbols-outlined text-[22px]">engineering</span>
       </div>
       <div>
-        <p class="text-xs text-gray-500 dark:text-slate-400 font-medium leading-tight">Phỏng vấn viên</p>
+        <p class="text-xs text-gray-500 dark:text-slate-400 font-medium leading-tight">{{ isDepartmentManager() ? 'Kỹ sư / Hội đồng PV' : 'Phỏng vấn viên' }}</p>
         <p class="text-xl font-extrabold text-teal-600 dark:text-teal-400 leading-tight">{{ totalInterviewers() }}</p>
       </div>
     </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-xl p-3.5 border border-gray-100 dark:border-slate-800 shadow-sm flex items-center gap-3">
+    <div *ngIf="isDepartmentManager()" class="bg-white dark:bg-slate-900 rounded-xl p-3.5 border border-gray-100 dark:border-slate-800 shadow-sm flex items-center gap-3">
+      <div class="w-10 h-10 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center flex-shrink-0">
+        <span class="material-symbols-outlined text-[22px]">precision_manufacturing</span>
+      </div>
+      <div>
+        <p class="text-xs text-gray-500 dark:text-slate-400 font-medium leading-tight">Tổ trưởng / Công nhân</p>
+        <p class="text-xl font-extrabold text-emerald-600 dark:text-emerald-400 leading-tight">{{ totalStaff() }}</p>
+      </div>
+    </div>
+
+    <div *ngIf="!isDepartmentManager()" class="bg-white dark:bg-slate-900 rounded-xl p-3.5 border border-gray-100 dark:border-slate-800 shadow-sm flex items-center gap-3">
       <div class="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center flex-shrink-0">
         <span class="material-symbols-outlined text-[22px]">apartment</span>
       </div>
@@ -206,8 +212,8 @@
           </span>
         </button>
 
-        <!-- View Mode Switcher -->
-        <div class="inline-flex rounded-xl p-1 bg-gray-100 dark:bg-slate-900 border border-gray-200 dark:border-slate-800">
+        <!-- View Mode Switcher (Chỉ hiển thị cho Ban Giám Đốc / SuperAdmin để xem sơ đồ toàn công ty) -->
+        <div *ngIf="isSuperAdmin()" class="inline-flex rounded-xl p-1 bg-gray-100 dark:bg-slate-900 border border-gray-200 dark:border-slate-800">
           <button (click)="setViewMode('table')"
             [ngClass]="viewMode() === 'table' ? 'bg-white dark:bg-slate-800 shadow-sm text-blue-600' : 'text-gray-500 dark:text-slate-400 hover:text-gray-700'"
             class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
@@ -281,19 +287,19 @@
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════════════════
-       VIEW 1: TREEGRID TABLE (Bảng phân cấp)
+       VIEW 1: DANH SÁCH NHÂN VIÊN (Danh sách cấp dưới cho Trưởng phòng / TreeGrid cho Admin)
   ═══════════════════════════════════════════════════════════════════════ -->
   <div *ngIf="!isLoading() && viewMode() === 'table'" class="bg-white dark:bg-slate-950 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
     <!-- Toolbar -->
     <div class="px-5 py-3 bg-gray-50/80 dark:bg-slate-900/90 border-b border-gray-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
       <div class="flex items-center gap-2">
         <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-900">
-          <span class="material-symbols-outlined text-[15px]">account_tree</span>
-          TreeGrid Phân cấp
+          <span class="material-symbols-outlined text-[15px]">{{ isDepartmentManager() ? 'groups' : 'account_tree' }}</span>
+          {{ isDepartmentManager() ? ('Danh sách Nhân viên dưới trướng • ' + currentUserDepartmentName()) : 'TreeGrid Phân cấp' }}
         </span>
-        <span class="text-xs text-gray-400 dark:text-slate-500">{{ flattenedTreeRows().length }} hàng</span>
+        <span class="text-xs text-gray-400 dark:text-slate-500">{{ flattenedTreeRows().length }} nhân sự</span>
       </div>
-      <div class="flex items-center gap-2">
+      <div *ngIf="isSuperAdmin()" class="flex items-center gap-2">
         <button (click)="expandAll()"
           class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors shadow-sm">
           <span class="material-symbols-outlined text-[15px]">unfold_more</span>
@@ -311,11 +317,15 @@
       <table class="min-w-full divide-y divide-gray-100 dark:divide-slate-800">
         <thead class="bg-gray-50/75 dark:bg-slate-900/80">
           <tr>
-            <th class="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Nhân sự &amp; Cơ cấu</th>
+            <th class="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider">
+              {{ isDepartmentManager() ? 'Thông tin Nhân viên & Mã NV' : 'Nhân sự & Cơ cấu' }}
+            </th>
             <th class="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Phòng ban</th>
-            <th class="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Vai trò &amp; Phạm vi quyền</th>
+            <th class="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider">
+              {{ isDepartmentManager() ? 'Chức danh / Vị trí làm việc' : 'Vai trò & Phạm vi quyền' }}
+            </th>
             <th class="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Quản lý trực tiếp</th>
-            <th class="px-5 py-3.5 text-center text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Cấp dưới</th>
+            <th *ngIf="!isDepartmentManager()" class="px-5 py-3.5 text-center text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Cấp dưới</th>
             <th class="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider">SĐT</th>
             <th class="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Trạng thái</th>
             <th class="px-5 py-3.5 text-right text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Thao tác</th>
@@ -325,16 +335,16 @@
           <tr *ngFor="let row of paginatedEmployees()" class="hover:bg-blue-50/30 dark:hover:bg-slate-900/60 transition-colors">
 
             <!-- Nhân sự + Phân cấp -->
-            <td class="py-3.5 pr-4 whitespace-nowrap" [style.paddingLeft.px]="row.level * 28 + 16">
+            <td class="py-3.5 pr-4 whitespace-nowrap" [style.paddingLeft.px]="isDepartmentManager() ? 20 : (row.level * 28 + 16)">
               <div class="flex items-center gap-2">
-                <span *ngIf="row.level > 0" class="inline-block border-l-2 border-b-2 border-slate-300 dark:border-slate-700 w-3.5 h-4 -mt-2.5 mr-1 rounded-bl flex-shrink-0"></span>
+                <span *ngIf="!isDepartmentManager() && row.level > 0" class="inline-block border-l-2 border-b-2 border-slate-300 dark:border-slate-700 w-3.5 h-4 -mt-2.5 mr-1 rounded-bl flex-shrink-0"></span>
 
-                <button *ngIf="row.hasChildren" (click)="toggleNode(row.node.employee.userId)"
+                <button *ngIf="!isDepartmentManager() && row.hasChildren" (click)="toggleNode(row.node.employee.userId)"
                   class="w-6 h-6 rounded-md flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 transition-colors mr-1 flex-shrink-0">
                   <span class="material-symbols-outlined text-[18px] transition-transform duration-200"
                     [class.rotate-90]="row.isExpanded">chevron_right</span>
                 </button>
-                <span *ngIf="!row.hasChildren" class="w-6 h-6 inline-flex items-center justify-center mr-1 flex-shrink-0">
+                <span *ngIf="!isDepartmentManager() && !row.hasChildren" class="w-6 h-6 inline-flex items-center justify-center mr-1 flex-shrink-0">
                   <span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700"></span>
                 </span>
 
@@ -360,12 +370,16 @@
                 <div class="min-w-0">
                   <div class="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5 flex-wrap">
                     <span>{{ row.node.employee.fullName }}</span>
-                    <span [ngClass]="getLevelBadge(row.level, row.node.employee.role).class"
+                    <span *ngIf="row.node.employee.employeeCode"
+                      class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 font-mono">
+                      {{ row.node.employee.employeeCode }}
+                    </span>
+                    <span *ngIf="!isDepartmentManager()" [ngClass]="getLevelBadge(row.level, row.node.employee.role).class"
                       class="text-[10px] font-bold px-1.5 py-0.5 rounded-full border">
                       {{ getLevelBadge(row.level, row.node.employee.role).label }}
                     </span>
                   </div>
-                  <div class="text-xs text-gray-400 dark:text-slate-500 font-mono truncate max-w-[200px]">{{ row.node.employee.email }}</div>
+                  <div class="text-xs text-gray-400 dark:text-slate-500 font-mono truncate max-w-[240px]">{{ row.node.employee.email }}</div>
                 </div>
               </div>
             </td>
@@ -379,34 +393,34 @@
               </span>
             </td>
 
-            <!-- Vai trò & Phạm vi quyền -->
+            <!-- Vai trò / Chức danh công việc -->
             <td class="px-5 py-3.5 whitespace-nowrap">
               <div class="flex flex-col items-start gap-1">
                 <span [ngClass]="getRoleBadge(row.node.employee.role)"
                   class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border">
                   <span class="material-symbols-outlined text-[14px]">{{ getRoleIcon(row.node.employee.role) }}</span>
-                  {{ row.node.employee.roleName || row.node.employee.role }}
+                  {{ row.node.employee.jobTitle || row.node.employee.roleName || row.node.employee.role }}
                 </span>
                 <span class="text-[11px] text-gray-500 dark:text-slate-400">
-                  {{ getRoleScopeSummary(row.node.employee.role) }}
+                  {{ isDepartmentManager() ? (row.node.employee.roleName || 'Nhân sự trực thuộc bộ phận') : getRoleScopeSummary(row.node.employee.role) }}
                 </span>
               </div>
             </td>
 
             <!-- Quản lý trực tiếp -->
             <td class="px-5 py-3.5 whitespace-nowrap">
-              <div *ngIf="row.node.employee.managerName" class="flex items-center gap-1.5 text-xs text-gray-700 dark:text-slate-300">
+              <div *ngIf="row.node.employee.managerName || isDepartmentManager()" class="flex items-center gap-1.5 text-xs text-gray-700 dark:text-slate-300">
                 <span class="material-symbols-outlined text-[15px] text-gray-400">subdirectory_arrow_right</span>
-                <span class="font-medium">{{ row.node.employee.managerName }}</span>
+                <span class="font-medium">{{ row.node.employee.managerName || currentUser()?.name }}</span>
               </div>
-              <span *ngIf="!row.node.employee.managerName" class="text-xs font-medium text-amber-600 dark:text-amber-400 flex items-center gap-1">
+              <span *ngIf="!row.node.employee.managerName && !isDepartmentManager()" class="text-xs font-medium text-amber-600 dark:text-amber-400 flex items-center gap-1">
                 <span class="material-symbols-outlined text-[14px]">workspace_premium</span>
                 {{ row.node.employee.role === 'ADMIN' ? 'Cấp cao nhất' : 'Không có' }}
               </span>
             </td>
 
-            <!-- Cấp dưới Avatar Group -->
-            <td class="px-5 py-3.5 whitespace-nowrap text-center">
+            <!-- Cấp dưới Avatar Group (Chỉ hiển thị cho Admin) -->
+            <td *ngIf="!isDepartmentManager()" class="px-5 py-3.5 whitespace-nowrap text-center">
               <div *ngIf="row.node.directSubordinates.length > 0" class="flex flex-col items-center gap-1">
                 <div class="flex items-center -space-x-2 cursor-pointer" (click)="toggleNode(row.node.employee.userId)" title="Nhấn để mở/đóng">
                   <div *ngFor="let sub of row.node.directSubordinates.slice(0, 3)"

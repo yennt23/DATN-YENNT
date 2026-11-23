@@ -75,7 +75,7 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
             {
                 foreach (var k in keys)
                 {
-                    if (!string.IsNullOrWhiteSpace(k) && k.Trim().StartsWith("AIzaSy"))
+                    if (!string.IsNullOrWhiteSpace(k) && k.Trim().Length >= 10)
                     {
                         var trimmed = k.Trim();
                         if (!_apiKeys.Any(x => x.Key == trimmed))
@@ -87,7 +87,7 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(singleKey) && singleKey.Trim().StartsWith("AIzaSy"))
+        if (!string.IsNullOrWhiteSpace(singleKey) && singleKey.Trim().Length >= 10)
         {
             var trimmed = singleKey.Trim();
             if (!_apiKeys.Any(x => x.Key == trimmed))
@@ -98,7 +98,7 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
 
         if (_apiKeys.Count == 0)
         {
-            _logger.LogWarning("⚠️ Không tìm thấy key bắt đầu bằng AIzaSy trong config, thêm placeholder key");
+            _logger.LogWarning("⚠️ Không tìm thấy Gemini API key trong config, thêm placeholder key");
             _apiKeys.Add(new ApiKeyInfo { Key = "AIzaSyPlaceholderKeyForATSInitialization000" });
         }
 
@@ -318,6 +318,137 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
         }
     }
 
+    /// <summary>
+    /// Xây dựng URL gọi Gemini API tự động tương thích với mọi loại Google API Key:
+    /// - Key Vertex AI Express / Google Cloud (AQ....): aiplatform.googleapis.com
+    /// - Key Google AI Studio (AIza...) hoặc các key khác: generativelanguage.googleapis.com
+    /// </summary>
+    public static string BuildGenerateContentUrl(string apiKey, string model, bool isStream = false)
+    {
+        var cleanKey = (apiKey ?? string.Empty).Trim();
+        var action = isStream ? "streamGenerateContent?alt=sse&" : "generateContent?";
+        if (cleanKey.StartsWith("AQ.", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"https://aiplatform.googleapis.com/v1/publishers/google/models/{model}:{action}key={Uri.EscapeDataString(cleanKey)}";
+        }
+        return $"https://generativelanguage.googleapis.com/v1beta/models/{model}:{action}key={Uri.EscapeDataString(cleanKey)}";
+    }
+
+    private async Task<(string Status, string? ErrorMessage)> ProbeSingleKeyLiveAsync(HttpClient client, string key)
+    {
+        var cleanKey = key.Trim();
+        var probeBody = new
+        {
+            contents = new[]
+            {
+                new { role = "user", parts = new[] { new { text = "ping" } } }
+            }
+        };
+        var jsonBody = JsonSerializer.Serialize(probeBody);
+
+        // Danh sách các endpoint thực tế của Google để kiểm tra (hỗ trợ cả AI Studio Key, Vertex AI Express Key AQ.*, OAuth Token...)
+        var endpointsToTry = new List<string>();
+        var encodedKey = Uri.EscapeDataString(cleanKey);
+
+        if (cleanKey.StartsWith("AQ.", StringComparison.OrdinalIgnoreCase))
+        {
+            endpointsToTry.Add($"https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:generateContent?key={encodedKey}");
+            endpointsToTry.Add($"https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.0-flash:generateContent?key={encodedKey}");
+            endpointsToTry.Add($"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={encodedKey}");
+            endpointsToTry.Add($"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={encodedKey}");
+        }
+        else
+        {
+            endpointsToTry.Add($"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={encodedKey}");
+            endpointsToTry.Add($"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={encodedKey}");
+            endpointsToTry.Add($"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={encodedKey}");
+            endpointsToTry.Add($"https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:generateContent?key={encodedKey}");
+        }
+
+        string lastStatus = "Error";
+        string? lastError = "Không thể xác thực API Key với máy chủ Google.";
+
+        foreach (var url in endpointsToTry)
+        {
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json")
+                };
+
+                if (cleanKey.StartsWith("ya29.", StringComparison.OrdinalIgnoreCase))
+                {
+                    req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cleanKey);
+                }
+
+                using var res = await client.SendAsync(req);
+                if (res.IsSuccessStatusCode)
+                {
+                    var isPreviewFallback = url.Contains("gemini-3-flash-preview", StringComparison.OrdinalIgnoreCase);
+                    var isVertex = url.Contains("aiplatform.googleapis.com", StringComparison.OrdinalIgnoreCase);
+                    string? note = isVertex
+                        ? "Hoạt động tốt (Google Cloud Vertex AI)"
+                        : (isPreviewFallback ? "Hoạt động tốt (Định tuyến qua Gemini Flash Preview)" : null);
+                    return ("Healthy", note);
+                }
+
+                var errContent = await res.Content.ReadAsStringAsync();
+
+                if ((int)res.StatusCode == 429)
+                {
+                    return ("RateLimited", "Hết hạn ngạch / Bị giới hạn tốc độ (429 Too Many Requests)");
+                }
+
+                if (res.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    lastStatus = "Forbidden";
+                    lastError = "Tài khoản Google chưa kích hoạt Billing hoặc bị chặn quyền API (403)";
+                    continue;
+                }
+
+                if (res.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    lastStatus = "ModelNotFound";
+                    lastError = "Mô hình Gemini không khả dụng trên endpoint này (404)";
+                    continue;
+                }
+
+                if (res.StatusCode == System.Net.HttpStatusCode.BadRequest &&
+                    (errContent.Contains("API_KEY_INVALID", StringComparison.OrdinalIgnoreCase) ||
+                     errContent.Contains("API key not valid", StringComparison.OrdinalIgnoreCase) ||
+                     errContent.Contains("UNAUTHENTICATED", StringComparison.OrdinalIgnoreCase)))
+                {
+                    lastStatus = "InvalidKey";
+                    lastError = "API Key không hợp lệ hoặc đã bị thu hồi trên Google Cloud / AI Studio";
+                    continue;
+                }
+
+                if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    lastStatus = "InvalidKey";
+                    lastError = "API Key / Token không được ủy quyền hoặc đã hết hạn (401)";
+                    continue;
+                }
+
+                if (res.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
+                {
+                    return ("ServiceUnavailable", "Google AI tạm thời quá tải (503)");
+                }
+
+                lastStatus = "Error";
+                lastError = $"Lỗi gọi API: HTTP {(int)res.StatusCode}";
+            }
+            catch (Exception ex)
+            {
+                lastStatus = "Error";
+                lastError = $"Lỗi kết nối mạng: {ex.Message}";
+            }
+        }
+
+        return (lastStatus, lastError);
+    }
+
     public async Task<List<DATN.Services.Models.GeminiKeyStat>> CheckAllKeysHealthAsync()
     {
         var keysToCheck = new List<(int Index, string Key)>();
@@ -343,148 +474,18 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
 
         foreach (var (idx, key) in keysToCheck)
         {
-            try
+            var (status, errorMsg) = await ProbeSingleKeyLiveAsync(client, key);
+            lock (_lock)
             {
-                // 1. Kiểm tra tính hợp lệ của API Key bằng Get Models
-                var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models?key={key}";
-                var response = await client.GetAsync(apiUrl);
-                var content = await response.Content.ReadAsStringAsync();
-
-                lock (_lock)
+                if (idx < _apiKeys.Count)
                 {
-                    if (idx < _apiKeys.Count)
+                    var info = _apiKeys[idx];
+                    info.LastCheckedAt = DateTime.UtcNow;
+                    info.Status = status;
+                    info.ErrorMessage = errorMsg;
+                    if (status != "Healthy")
                     {
-                        var info = _apiKeys[idx];
-                        info.LastCheckedAt = DateTime.UtcNow;
-
-                        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest && 
-                            (content.Contains("API_KEY_INVALID", StringComparison.OrdinalIgnoreCase) || content.Contains("API key not valid", StringComparison.OrdinalIgnoreCase)))
-                        {
-                            info.Status = "InvalidKey";
-                            info.ErrorMessage = "API Key không hợp lệ hoặc đã bị xoá trên Google AI Studio";
-                            info.FailureCount++;
-                            continue;
-                        }
-                        else if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                        {
-                            info.Status = "Forbidden";
-                            info.ErrorMessage = "Tài khoản Google chưa kích hoạt Billing hoặc bị chặn (403)";
-                            info.FailureCount++;
-                            continue;
-                        }
-                        else if ((int)response.StatusCode == 429)
-                        {
-                            info.Status = "RateLimited";
-                            info.ErrorMessage = "Hết hạn ngạch / Bị giới hạn tốc độ (429 Too Many Requests)";
-                            info.FailureCount++;
-                            continue;
-                        }
-                    }
-                }
-
-                // 2. Thử nghiệm trực tiếp một truy vấn gọi sinh nội dung thực tế (probe request)
-                try
-                {
-                    var probeBody = new
-                    {
-                        contents = new[]
-                        {
-                            new { parts = new[] { new { text = "ping" } } }
-                        }
-                    };
-                    var jsonBody = JsonSerializer.Serialize(probeBody);
-
-                    // Thử gemini-2.5-flash trước
-                    var probeUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}";
-                    var probeReq = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json");
-                    var probeRes = await client.PostAsync(probeUrl, probeReq);
-
-                    lock (_lock)
-                    {
-                        if (idx < _apiKeys.Count)
-                        {
-                            var info = _apiKeys[idx];
-                            if (probeRes.IsSuccessStatusCode)
-                            {
-                                info.Status = "Healthy";
-                                info.ErrorMessage = null;
-                            }
-                            else if (probeRes.StatusCode == System.Net.HttpStatusCode.NotFound)
-                            {
-                                // Tài khoản bị 404 với gemini-2.5-flash do Google deprecate cho new users, thử fallback sang gemini-3-flash-preview
-                                _ = Task.Run(async () =>
-                                {
-                                    try
-                                    {
-                                        var fbUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={key}";
-                                        var fbReq = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json");
-                                        var fbRes = await client.PostAsync(fbUrl, fbReq);
-                                        lock (_lock)
-                                        {
-                                            if (fbRes.IsSuccessStatusCode)
-                                            {
-                                                info.Status = "Healthy";
-                                                info.ErrorMessage = "Hoạt động tốt (Tự động định tuyến qua Gemini Flash Preview)";
-                                            }
-                                            else
-                                            {
-                                                info.Status = "ModelNotFound";
-                                                info.ErrorMessage = "Mô hình Gemini không khả dụng cho tài khoản này (404)";
-                                                info.FailureCount++;
-                                            }
-                                        }
-                                    }
-                                    catch { }
-                                });
-                            }
-                            else if ((int)probeRes.StatusCode == 429)
-                            {
-                                info.Status = "RateLimited";
-                                info.ErrorMessage = "Hết hạn ngạch / Bị giới hạn tốc độ (429 Too Many Requests)";
-                                info.FailureCount++;
-                            }
-                            else if (probeRes.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                            {
-                                info.Status = "Forbidden";
-                                info.ErrorMessage = "Tài khoản Google chưa kích hoạt Billing hoặc bị chặn (403)";
-                                info.FailureCount++;
-                            }
-                            else if (probeRes.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
-                            {
-                                info.Status = "ServiceUnavailable";
-                                info.ErrorMessage = "Google AI tạm thời quá tải (503)";
-                            }
-                            else
-                            {
-                                info.Status = "Error";
-                                info.ErrorMessage = $"Lỗi gọi API: HTTP {(int)probeRes.StatusCode}";
-                                info.FailureCount++;
-                            }
-                        }
-                    }
-                }
-                catch (Exception probeEx)
-                {
-                    lock (_lock)
-                    {
-                        if (idx < _apiKeys.Count)
-                        {
-                            var info = _apiKeys[idx];
-                            info.Status = "Error";
-                            info.ErrorMessage = $"Lỗi kết nối probe: {probeEx.Message}";
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                lock (_lock)
-                {
-                    if (idx < _apiKeys.Count)
-                    {
-                        _apiKeys[idx].Status = "Error";
-                        _apiKeys[idx].ErrorMessage = $"Lỗi kết nối mạng: {ex.Message}";
-                        _apiKeys[idx].LastCheckedAt = DateTime.UtcNow;
+                        info.FailureCount++;
                     }
                 }
             }
@@ -522,61 +523,53 @@ public class GeminiApiKeyProvider : IGeminiApiKeyProvider
         }
     }
 
-    private async Task<bool> ValidateApiKeyAsync(string apiKey)
-    {
-        if (string.IsNullOrWhiteSpace(apiKey)) return false;
-        var trimmed = apiKey.Trim();
-        if (!trimmed.StartsWith("AIzaSy") || trimmed.Length < 35) return false;
-
-        try
-        {
-            var client = _httpClientFactory.CreateClient("GeminiClient");
-            var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models?key={trimmed}";
-            var response = await client.GetAsync(apiUrl);
-
-            if (response.IsSuccessStatusCode) return true;
-
-            var errorContent = await response.Content.ReadAsStringAsync();
-            // Nếu Google báo API_KEY_INVALID (400) thì key sai hoàn toàn
-            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest && errorContent.Contains("API_KEY_INVALID"))
-            {
-                _logger.LogWarning("❌ Google API xác nhận Key không hợp lệ (API_KEY_INVALID).");
-                return false;
-            }
-
-            // Nếu lỗi 403 (chưa kích hoạt billing / quota), key vẫn hợp lệ về mặt cấu trúc
-            _logger.LogWarning("⚠️ Google API phản hồi {Status} ({Error}). Key cấu trúc hợp lệ, cho phép lưu.", response.StatusCode, errorContent);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "⚠️ Không thể kết nối tới Google API để xác thực, chấp nhận theo định dạng chuẩn.");
-            return true;
-        }
-    }
-
     public async Task<bool> AddKeyAsync(string key, List<string>? assignedModules = null)
     {
         if (string.IsNullOrWhiteSpace(key)) return false;
         var cleanKey = key.Trim();
 
+        // Không hardcode tiền tố AIzaSy — Chấp nhận mọi định dạng Google API Key (AIza..., AQ...., ya29...., v.v.) miễn đủ độ dài tối thiểu và không chứa khoảng trắng
+        if (cleanKey.Length < 10 || cleanKey.Any(char.IsWhiteSpace))
+        {
+            _logger.LogWarning("⚠️ API Key không hợp lệ (quá ngắn hoặc chứa khoảng trắng).");
+            return false;
+        }
+
         lock (_lock)
         {
-            if (_apiKeys.Any(i => i.Key == cleanKey))
+            if (_apiKeys.Any(i => i.Key.Equals(cleanKey, StringComparison.Ordinal)))
             {
                 _logger.LogWarning("⚠️ API Key đã tồn tại: {Key}", TruncateKey(cleanKey));
                 return false;
             }
         }
 
-        var isValid = await ValidateApiKeyAsync(cleanKey);
-        if (!isValid) return false;
+        // Tự động kiểm tra thực tế (probe) tình trạng key trên các cổng Google AI Studio & Vertex AI
+        string initialStatus = "Healthy";
+        string? initialError = null;
+        try
+        {
+            var client = _httpClientFactory.CreateClient("GeminiClient");
+            client.Timeout = TimeSpan.FromSeconds(10);
+            (initialStatus, initialError) = await ProbeSingleKeyLiveAsync(client, cleanKey);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "⚠️ Không thể probe key mới ngay lập tức, vẫn lưu key vào hệ thống.");
+        }
 
         lock (_lock)
         {
-            if (_apiKeys.Any(i => i.Key == cleanKey)) return false;
+            if (_apiKeys.Any(i => i.Key.Equals(cleanKey, StringComparison.Ordinal))) return false;
 
-            _apiKeys.Add(new ApiKeyInfo { Key = cleanKey });
+            _apiKeys.Add(new ApiKeyInfo
+            {
+                Key = cleanKey,
+                Status = initialStatus,
+                ErrorMessage = initialError,
+                LastCheckedAt = DateTime.UtcNow,
+                FailureCount = initialStatus == "Healthy" ? 0 : 1
+            });
             var newIndex = _apiKeys.Count - 1;
 
             if (assignedModules != null && assignedModules.Any())

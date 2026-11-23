@@ -216,12 +216,25 @@
                     </span>
                     }
                   </div>
-                  <div class="text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-2 text-[11px]">
+                  <div class="text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1.5 text-[11px] mt-0.5">
                     <span class="font-mono font-semibold text-slate-700 dark:text-slate-300">{{ app.phone }}</span>
+                    @if (app.email && !app.email.endsWith('.local')) {
+                    <span>•</span>
+                    <span class="text-slate-600 dark:text-slate-400 truncate max-w-[150px]" [title]="app.email">{{ app.email }}</span>
+                    }
+                    @if (app.yearOfBirth) {
                     <span>•</span>
                     <span>NS: {{ app.yearOfBirth }}</span>
+                    }
+                    @if (app.hometown) {
                     <span>•</span>
                     <span>{{ app.hometown }}</span>
+                    }
+                    <span>•</span>
+                    <span class="text-indigo-600 dark:text-indigo-400 font-medium inline-flex items-center gap-0.5" [title]="'Thời gian nộp hồ sơ: ' + (app.appliedAt | date:'HH:mm:ss dd/MM/yyyy')">
+                      <span class="material-symbols-outlined text-[13px]">schedule</span>
+                      <span>Nộp: {{ app.appliedAt | date:'dd/MM/yyyy HH:mm' }}</span>
+                    </span>
                   </div>
 
                   <!-- Badges cảnh báo nghiệp vụ từ DB -->
@@ -308,6 +321,8 @@
                   [class]="getTagClass(tag)">
                   {{ tag }}
                 </span>
+                } @empty {
+                <span class="text-[11px] text-slate-400 italic">Đang cập nhật hồ sơ</span>
                 }
               </div>
             </td>
@@ -339,6 +354,12 @@
                   <button type="button" (click)="openDrawer(app)"
                     class="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold cursor-pointer">
                     Chi tiết
+                  </button>
+
+                  <button type="button" (click)="sendAcknowledgementEmail(app, $event)"
+                    class="p-1 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition cursor-pointer"
+                    title="Gửi email xác nhận nộp hồ sơ cho ứng viên">
+                    <span class="material-symbols-outlined text-[15px] block">mail</span>
                   </button>
 
                   @if (app.status === 'Hired' || app.convertedEmployeeCode) {
@@ -618,15 +639,23 @@
               </span>
             </div>
             <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              SĐT: {{ detail.phone }} • Năm sinh: {{ detail.yearOfBirth }} • Quê quán: {{ detail.hometown }} • Vị trí: {{ detail.jobTitle }}
+              SĐT: {{ detail.phone }} • Email: {{ (detail.email && !detail.email.endsWith('.local')) ? detail.email : 'Chưa có' }} • Năm sinh: {{ detail.yearOfBirth || 'Chưa cập nhật' }} • Quê quán: {{ detail.hometown || 'Chưa cập nhật' }} • Nộp lúc: {{ detail.appliedAt | date:'HH:mm dd/MM/yyyy' }} • Vị trí: {{ detail.jobTitle }}
             </p>
           </div>
         </div>
 
-        <button type="button" (click)="closeDrawer()"
-          class="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-          <span class="material-symbols-outlined">close</span>
-        </button>
+        <div class="flex items-center gap-2">
+          <button type="button" (click)="sendAcknowledgementEmail(detail, $event)"
+            class="px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:border-indigo-800 dark:text-indigo-300 text-xs font-semibold inline-flex items-center gap-1.5 transition cursor-pointer"
+            title="Gửi email xác nhận tiếp nhận hồ sơ tới ứng viên">
+            <span class="material-symbols-outlined text-[15px]">mail</span>
+            <span>Gửi mail xác nhận</span>
+          </button>
+          <button type="button" (click)="closeDrawer()"
+            class="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
       </div>
 
       <!-- Drawer Body: Chia 2 Cột -->
@@ -863,19 +892,23 @@
               </div>
               <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70">
                 <div class="text-slate-400 text-[11px]">Năm sinh</div>
-                <div class="font-bold text-slate-900 dark:text-white mt-0.5">{{ detail.yearOfBirth }}</div>
+                <div class="font-bold text-slate-900 dark:text-white mt-0.5">{{ detail.yearOfBirth || 'Chưa cập nhật' }}</div>
               </div>
               <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70">
                 <div class="text-slate-400 text-[11px]">Số CCCD / Định danh</div>
-                <div class="font-mono font-bold text-slate-800 dark:text-slate-200 mt-0.5">{{ detail.cccd }}</div>
+                <div class="font-mono font-bold text-slate-800 dark:text-slate-200 mt-0.5">{{ detail.cccd || 'Chưa cập nhật' }}</div>
               </div>
               <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70">
                 <div class="text-slate-400 text-[11px]">Quê quán / Thường trú</div>
-                <div class="font-bold text-slate-900 dark:text-white mt-0.5">{{ detail.hometown }}</div>
+                <div class="font-bold text-slate-900 dark:text-white mt-0.5">{{ detail.hometown || 'Chưa cập nhật' }}</div>
               </div>
               <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70">
                 <div class="text-slate-400 text-[11px]">Trình độ học vấn</div>
-                <div class="font-bold text-slate-900 dark:text-white mt-0.5">{{ detail.educationLevel }}</div>
+                <div class="font-bold text-slate-900 dark:text-white mt-0.5">{{ detail.educationLevel || 'Chưa cập nhật' }}</div>
+              </div>
+              <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70">
+                <div class="text-slate-400 text-[11px]">Thời gian nộp hồ sơ</div>
+                <div class="font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">{{ detail.appliedAt | date:'HH:mm:ss dd/MM/yyyy' }}</div>
               </div>
             </div>
 
@@ -962,6 +995,11 @@
           <div>
             <label class="font-bold text-slate-700 dark:text-slate-300 block mb-1">Trình độ</label>
             <input type="text" [(ngModel)]="walkInForm.educationLevel"
+              class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800" />
+          </div>
+          <div>
+            <label class="font-bold text-slate-700 dark:text-slate-300 block mb-1">Email / Gmail (nhận thư xác nhận)</label>
+            <input type="email" [(ngModel)]="walkInForm.email" placeholder="VD: ungvien@gmail.com"
               class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800" />
           </div>
         </div>
@@ -1279,8 +1317,11 @@
             <h3 class="text-sm font-bold flex items-center gap-2">
               <span>Lên Lịch Phỏng Vấn &amp; Gửi Thư Mời</span>
               <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                [class]="app.recruitmentTrack === 'PROFESSIONAL' ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-400/30' : 'bg-amber-500/20 text-amber-300 border border-amber-400/30'">
-                {{ app.recruitmentTrack === 'PROFESSIONAL' ? 'Ứng tuyển Website (Kỹ thuật/VP)' : 'Ứng tuyển QR (Sản xuất/Công nhân)' }}
+                [class]="app.applicationSource === 'GOOGLE_FORM_QR' ? 'bg-amber-500/20 text-amber-300 border border-amber-400/30' : (app.applicationSource === 'WALK_IN' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30' : 'bg-indigo-500/20 text-indigo-300 border border-indigo-400/30')">
+                {{ app.applicationSource === 'GOOGLE_FORM_QR' ? 'Ứng tuyển QR Form' : (app.applicationSource === 'WALK_IN' ? 'Tiếp nhận trực tiếp' : 'Ứng tuyển Website / CV') }}
+                @if (app.departmentName) {
+                  <span>&bull; {{ app.departmentName }}</span>
+                }
               </span>
             </h3>
             <p class="text-[11px] text-slate-400 mt-0.5">
@@ -1375,7 +1416,7 @@
               Hình thức phỏng vấn *:
             </label>
             <select [ngModel]="interviewType()"
-              (ngModelChange)="interviewType.set($event); updateEmailPreview()"
+              (ngModelChange)="onInterviewTypeChange($event)"
               class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium">
               <option value="ONLINE">Online (Trực tuyến qua Video Call / Meet / Zoom)</option>
               <option value="OFFLINE">Offline (Trực tiếp tại Nhà máy / Văn phòng)</option>
@@ -1426,7 +1467,7 @@
             </label>
             <input type="text" [ngModel]="interviewLocation()"
               (ngModelChange)="interviewLocation.set($event); validateInterviewLocation(); updateEmailPreview()"
-              [placeholder]="interviewType() === 'ONLINE' ? 'VD: https://meet.google.com/abc-xyz' : 'VD: Phòng Tuyển dụng A, Nhà máy V9 TECH - KCN Yên Phong, Bắc Ninh'"
+              [placeholder]="interviewType() === 'ONLINE' ? 'Nhập đường dẫn cuộc họp (VD: https://meet.google.com/...)' : 'Nhập địa điểm phỏng vấn trực tiếp...'"
               [class.border-rose-500]="locationValidationError()"
               class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium" />
             @if (locationValidationError()) {

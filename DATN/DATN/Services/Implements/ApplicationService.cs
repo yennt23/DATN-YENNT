@@ -185,6 +185,8 @@ public class ApplicationService : IApplicationService
             OralInterviewChecklistJson = a.OralInterviewChecklistJson,
             MedicalCheckStatus = a.MedicalCheckStatus,
             DateOfBirth = a.DateOfBirth,
+            Hometown = a.Candidate != null ? a.Candidate.Location : null,
+            YearOfBirth = a.DateOfBirth.HasValue ? a.DateOfBirth.Value.Year.ToString() : null,
             IsInTalentPool = a.IsInTalentPool,
             InterviewBatchId = a.InterviewBatchId
         });
@@ -381,11 +383,17 @@ public class ApplicationService : IApplicationService
                         candidateDocument = existingSameCvDocument;
                         _logger.LogInformation("♻️ Reuse CandidateDocument {DocumentId}", candidateDocument.CandidateDocumentId);
 
-                        // Xóa file vật lý vừa upload nếu trùng hoàn toàn
-                        if (!string.IsNullOrWhiteSpace(savedFilePath) && System.IO.File.Exists(savedFilePath))
+                        // Chỉ xóa file vật lý vừa upload nếu file cũ thực sự còn tồn tại trên ổ đĩa
+                        var existingStoredPath = !string.IsNullOrWhiteSpace(candidateDocument.File?.StoredFileName)
+                            ? Path.Combine(uploadsFolderPath, candidateDocument.File.StoredFileName)
+                            : null;
+                        if (!string.IsNullOrWhiteSpace(existingStoredPath) && System.IO.File.Exists(existingStoredPath))
                         {
-                            System.IO.File.Delete(savedFilePath);
-                            savedFilePath = Path.Combine(uploadsFolderPath, candidateDocument.File.StoredFileName);
+                            if (!string.IsNullOrWhiteSpace(savedFilePath) && System.IO.File.Exists(savedFilePath) && !string.Equals(savedFilePath, existingStoredPath, StringComparison.OrdinalIgnoreCase))
+                            {
+                                System.IO.File.Delete(savedFilePath);
+                            }
+                            savedFilePath = existingStoredPath;
                         }
                     }
                     else
@@ -491,26 +499,18 @@ public class ApplicationService : IApplicationService
                     await _context.SaveChangesAsync();
                     // ===== END 7 BUSINESS RULES GUARD =====
 
-                    // ===== AI SCORING (ASYNC BACKGROUND TASK) =====
-                    _ = Task.Run(() => ScoreApplicationInBackgroundAsync(
-                        application.ApplicationId,
-                        savedFilePath,
-                        job.Title,
-                        job.Description,
-                        job.Requirements,
-                        application.ContactEmail ?? candidate.Email
-                    ));
-                    _logger.LogInformation("⚡ Đã gửi AI scoring task vào background");
-                    // ===== END AI SCORING =====
-
-                    // Thu thập thông tin chuẩn bị gửi email xác nhận sau khi Commit thành công
+                    // Thu thập thông tin chuẩn bị gửi email xác nhận và chấm điểm AI sau khi Commit thành công
                     var applicantEmail = !string.IsNullOrWhiteSpace(request.Email) 
                         ? request.Email.Trim() 
                         : (!string.IsNullOrWhiteSpace(application.ContactEmail) ? application.ContactEmail.Trim() : candidate.Email?.Trim());
                     var applicantName = ResolveCandidateDisplayName(application);
                     var capturedJobTitle = job.Title;
+                    var capturedJobDesc = job.Description;
+                    var capturedJobReq = job.Requirements;
                     var capturedDeptName = job.DepartmentNavigation?.DepartmentName ?? "Nhà máy";
+                    var capturedAppIdGuid = application.ApplicationId;
                     var capturedAppId = application.ApplicationId.ToString();
+                    var capturedFilePath = savedFilePath;
 
                     // Tạo thông báo cho ứng viên
                     if (userId.HasValue)
@@ -563,6 +563,18 @@ public class ApplicationService : IApplicationService
 
                     await transaction.CommitAsync();
                     _logger.LogInformation("✅ Hoàn thành lưu hồ sơ ứng tuyển vào Database thành công.");
+
+                    // ===== AI SCORING (SAU KHI TRANSACTION ĐÃ COMMIT THÀNH CÔNG) =====
+                    _ = Task.Run(() => ScoreApplicationInBackgroundAsync(
+                        capturedAppIdGuid,
+                        capturedFilePath,
+                        capturedJobTitle,
+                        capturedJobDesc,
+                        capturedJobReq,
+                        applicantEmail
+                    ));
+                    _logger.LogInformation("⚡ Đã gửi AI scoring task vào background sau khi commit transaction");
+                    // ===== END AI SCORING =====
 
                     // ===== GỬI EMAIL XÁC NHẬN CHO ỨNG VIÊN (ASYNC BACKGROUND TASK) =====
                     if (!string.IsNullOrWhiteSpace(applicantEmail) && 
@@ -930,7 +942,11 @@ public class ApplicationService : IApplicationService
                 JobTitle = a.Job.Title,
                 CompanyName = a.Job.DepartmentNavigation != null ? a.Job.DepartmentNavigation.DepartmentName : "Nhà máy KCN",
                 JobLocation = a.Job.Location ?? "Bắc Ninh",
-                Status = a.Status,
+                Status = a.OfferStatus == "Offer_Sent" ? "Offer_Sent" 
+                       : (a.OfferStatus == "Offer_Accepted" || a.Status == "OFFER_ACCEPTED" ? "OFFER_ACCEPTED" : a.Status),
+                OfferStatus = a.OfferStatus,
+                OfferedSalary = a.OfferedSalary,
+                OfferExpiresAt = a.OfferExpiresAt,
                 AppliedAt = a.AppliedAt,
                 CvUrl = a.CvFileUrl ?? (a.ResumeDocument != null && a.ResumeDocument.File != null ? (a.ResumeDocument.File.Url ?? a.ResumeDocument.File.LocalPath) : null)
             })
@@ -1116,6 +1132,7 @@ public class ApplicationService : IApplicationService
         }
 
         // 3. Lấy danh sách số điện thoại và CandidateId đã nộp hồ sơ cho Job này để chống lưu trùng
+        var newAppsWithEmail = new List<(Guid AppId, string Email, string Name)>();
         var existingApplicationsInJob = await _context.Applications
             .Where(a => a.JobId == request.JobId)
             .Select(a => new { Phone = !string.IsNullOrEmpty(a.ContactPhone) ? a.ContactPhone : a.Candidate.Phone, a.CandidateId })
@@ -1232,6 +1249,10 @@ public class ApplicationService : IApplicationService
                 else
                 {
                     // Cập nhật thông tin phụ nếu candidate cũ chưa có
+                    if (!string.IsNullOrWhiteSpace(item.Email) && (string.IsNullOrEmpty(candidate.Email) || candidate.Email.EndsWith(".local")))
+                    {
+                        candidate.Email = item.Email.Trim();
+                    }
                     if (string.IsNullOrEmpty(candidate.Location) && !string.IsNullOrWhiteSpace(item.Hometown))
                     {
                         candidate.Location = safeLocation;
@@ -1259,10 +1280,14 @@ public class ApplicationService : IApplicationService
                     LastStageChangedAt = DateTime.UtcNow,
                     ContactName = safeFullName,
                     ContactPhone = safePhone,
-                    ContactEmail = candidate.Email
+                    ContactEmail = !string.IsNullOrWhiteSpace(item.Email) ? item.Email.Trim() : candidate.Email
                 };
 
                 _context.Applications.Add(application);
+                if (!string.IsNullOrWhiteSpace(item.Email) && item.Email.Contains('@') && !item.Email.EndsWith(".local"))
+                {
+                    newAppsWithEmail.Add((application.ApplicationId, item.Email.Trim(), safeFullName));
+                }
                 await _workflowGuard.ValidateCandidateIntakeAsync(application, cleanPhone, null); // Logic 1: Blacklist + chuẩn hóa SĐT
                 _workflowGuard.ApplyScoreVersionSnapshot(application, job);
                 existingCandidateIdsInJob.Add(candidate.CandidateId);
@@ -1305,6 +1330,25 @@ public class ApplicationService : IApplicationService
 
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
+
+            // Gửi email xác nhận tiếp nhận hồ sơ qua Google Form / QR Sheet cho các ứng viên có email
+            if (newAppsWithEmail.Count > 0)
+            {
+                _ = Task.Run(async () =>
+                {
+                    foreach (var item in newAppsWithEmail)
+                    {
+                        try
+                        {
+                            await SendApplicationConfirmationEmailAsync(item.AppId, item.Email, "Ứng tuyển qua mã QR / Google Form");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "⚠️ [IMPORT-SHEETS] Lỗi gửi email cho {Email}", item.Email);
+                        }
+                    }
+                });
+            }
 
             // Lưu ApplicationNotes phụ trợ (không gây lỗi gián đoạn nếu bảng Note có cấu trúc khác)
             if (pendingNotes.Count > 0)
@@ -1479,6 +1523,10 @@ public class ApplicationService : IApplicationService
         }
         else
         {
+            if (!string.IsNullOrWhiteSpace(request.Email) && (string.IsNullOrEmpty(candidate.Email) || candidate.Email.EndsWith(".local")))
+            {
+                candidate.Email = request.Email.Trim();
+            }
             if (string.IsNullOrEmpty(candidate.Location) && !string.IsNullOrWhiteSpace(request.Hometown))
             {
                 candidate.Location = request.Hometown.Trim();
@@ -1502,7 +1550,7 @@ public class ApplicationService : IApplicationService
             LastStageChangedAt = DateTime.UtcNow,
             ContactName = request.FullName.Trim(),
             ContactPhone = cleanPhone,
-            ContactEmail = candidate.Email
+            ContactEmail = !string.IsNullOrWhiteSpace(request.Email) ? request.Email.Trim() : candidate.Email
         };
 
         _context.Applications.Add(application);
@@ -1544,42 +1592,11 @@ public class ApplicationService : IApplicationService
         // 8. Gửi email xác nhận tiếp nhận hồ sơ qua mã QR / Form trực tuyến cho ứng viên
         var qrApplicantEmail = !string.IsNullOrWhiteSpace(request.Email) 
             ? request.Email.Trim() 
-            : (!string.IsNullOrWhiteSpace(candidate.Email) && !candidate.Email.EndsWith("@mass-recruit.local") ? candidate.Email.Trim() : null);
+            : (!string.IsNullOrWhiteSpace(application.ContactEmail) && !application.ContactEmail.EndsWith(".local") ? application.ContactEmail.Trim() : (!string.IsNullOrWhiteSpace(candidate.Email) && !candidate.Email.EndsWith(".local") ? candidate.Email.Trim() : null));
 
-        if (!string.IsNullOrWhiteSpace(qrApplicantEmail))
+        if (!string.IsNullOrWhiteSpace(qrApplicantEmail) && qrApplicantEmail.Contains('@'))
         {
-            var applicantName = request.FullName.Trim();
-            var jobTitle = job.Title;
-            var deptName = job.DepartmentNavigation?.DepartmentName ?? "Nhà máy";
-            var appId = application.ApplicationId.ToString();
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    using var scope = _scopeFactory.CreateScope();
-                    var scopedEmailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
-
-                    var confirmationBody = BuildApplicationConfirmationEmailHtml(
-                        applicantName,
-                        jobTitle,
-                        deptName,
-                        appId,
-                        "Ứng tuyển nhanh qua mã QR / Form trực tuyến"
-                    );
-
-                    await scopedEmailService.SendEmailAsync(
-                        qrApplicantEmail,
-                        $"[Xác nhận nộp hồ sơ] Vị trí {jobTitle} - {deptName}",
-                        confirmationBody
-                    );
-                    _logger.LogInformation("✅ [QR-APPLY] Đã gửi email xác nhận thành công cho ứng viên: {Email}", qrApplicantEmail);
-                }
-                catch (Exception emailEx)
-                {
-                    _logger.LogError(emailEx, "❌ [QR-APPLY] Lỗi khi gửi email xác nhận cho ứng viên: {Email} - Chi tiết: {Message}", qrApplicantEmail, emailEx.Message);
-                }
-            });
+            _ = SendApplicationConfirmationEmailAsync(application.ApplicationId, qrApplicantEmail, "Ứng tuyển nhanh qua mã QR / Form trực tuyến");
         }
 
         return new GoogleFormWebhookResultDto
@@ -2164,6 +2181,81 @@ public class ApplicationService : IApplicationService
         }
         result.Add(current.ToString());
         return result;
+    }
+
+    /// <summary>
+    /// Gửi email xác nhận tiếp nhận hồ sơ ứng tuyển (cho nộp CV, quét QR, Google Form hoặc HR gửi thủ công)
+    /// </summary>
+    public async Task<bool> SendApplicationConfirmationEmailAsync(Guid applicationId, string? emailOverride = null, string? sourceLabel = null)
+    {
+        var app = await _context.Applications
+            .Include(a => a.Job)
+                .ThenInclude(j => j.DepartmentNavigation)
+            .Include(a => a.Candidate)
+            .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
+
+        if (app == null) return false;
+
+        var targetEmail = !string.IsNullOrWhiteSpace(emailOverride)
+            ? emailOverride.Trim()
+            : (!string.IsNullOrWhiteSpace(app.ContactEmail) && !app.ContactEmail.EndsWith(".local")
+                ? app.ContactEmail.Trim()
+                : (app.Candidate != null && !string.IsNullOrWhiteSpace(app.Candidate.Email) && !app.Candidate.Email.EndsWith(".local")
+                    ? app.Candidate.Email.Trim()
+                    : null));
+
+        if (string.IsNullOrWhiteSpace(targetEmail) || !targetEmail.Contains('@'))
+        {
+            _logger.LogWarning("⚠️ Không có địa chỉ email hợp lệ để gửi xác nhận cho Application {AppId}", applicationId);
+            return false;
+        }
+
+        // Cập nhật lại ContactEmail và Candidate.Email nếu emailOverride được truyền vào
+        if (!string.IsNullOrWhiteSpace(emailOverride) && emailOverride.Contains('@'))
+        {
+            app.ContactEmail = targetEmail;
+            if (app.Candidate != null && (string.IsNullOrEmpty(app.Candidate.Email) || app.Candidate.Email.EndsWith(".local")))
+            {
+                app.Candidate.Email = targetEmail;
+            }
+            await _context.SaveChangesAsync();
+        }
+
+        var candidateName = !string.IsNullOrWhiteSpace(app.ContactName)
+            ? app.ContactName
+            : (app.Candidate?.FullName ?? "Ứng viên");
+        var jobTitle = app.Job?.Title ?? "Vị trí ứng tuyển";
+        var deptName = app.Job?.DepartmentNavigation?.DepartmentName ?? "Nhà máy";
+        var resolvedSourceLabel = sourceLabel ?? (app.ApplicationSource == "GOOGLE_FORM_QR" ? "Ứng tuyển qua mã QR / Google Form" : (app.ApplicationSource == "WALK_IN" ? "Tiếp nhận trực tiếp tại nhà máy" : "Nộp CV trực tuyến"));
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var scopedEmailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+                var confirmationBody = BuildApplicationConfirmationEmailHtml(
+                    candidateName,
+                    jobTitle,
+                    deptName,
+                    app.ApplicationId.ToString(),
+                    resolvedSourceLabel
+                );
+
+                await scopedEmailService.SendEmailAsync(
+                    targetEmail,
+                    $"[Xác nhận nộp hồ sơ] Vị trí {jobTitle} - {deptName}",
+                    confirmationBody
+                );
+                _logger.LogInformation("✅ [SEND-ACK-EMAIL] Đã gửi email xác nhận thành công tới: {Email} cho hồ sơ {AppId}", targetEmail, app.ApplicationId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ [SEND-ACK-EMAIL] Lỗi khi gửi email xác nhận cho: {Email}", targetEmail);
+            }
+        });
+
+        return true;
     }
 
     #endregion

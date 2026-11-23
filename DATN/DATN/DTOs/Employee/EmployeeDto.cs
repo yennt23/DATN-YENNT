@@ -18,6 +18,9 @@ namespace DATN.DTOs.Employee
         public Guid? ManagerId { get; set; }
         public string? ManagerName { get; set; }
         public int SubordinatesCount { get; set; }
+        public string? EmployeeCode { get; set; }
+        public string? JobTitle { get; set; }
+        public bool IsHiredStaff { get; set; }
 
         // Audit Trail
         public DateTime? LockedAt { get; set; }

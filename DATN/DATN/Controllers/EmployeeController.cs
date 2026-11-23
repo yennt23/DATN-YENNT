@@ -76,13 +76,14 @@ namespace DATN.Controllers
                 fullName = e.FullName,
                 email = e.Email,
                 roleName = string.IsNullOrEmpty(e.Role) ? "HR" : e.Role,
-                // Helper field for sorting
+                // Ưu tiên Hội đồng phỏng vấn (INTERVIEWER) và Trưởng bộ phận (MANAGER) lên đầu danh sách
                 rolePriority = e.Role switch
                 {
-                    "ADMIN" => 1,
-                    "HR" => 2,
-                    "INTERVIEWER" => 3,
-                    _ => 4
+                    "INTERVIEWER" => 1,
+                    "MANAGER" => 2,
+                    "HR" => 3,
+                    "ADMIN" => 4,
+                    _ => 5
                 }
             })
             .OrderBy(e => e.rolePriority)  // Ưu tiên theo role: Admin -> HR -> Interviewer

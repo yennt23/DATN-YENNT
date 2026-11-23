@@ -3,7 +3,7 @@ import { CanActivateFn, Router, ActivatedRouteSnapshot, RouterStateSnapshot, Url
 import { isPlatformBrowser } from '@angular/common';
 import { AuthService } from '../services/auth.service';
 import { ToastService } from '../services/toast.service';
-import { SIDEBAR_MENU_ITEMS } from '../configs/menu.config';
+import { SIDEBAR_MENU_ITEMS, isAdminRole, isHrRole } from '../configs/menu.config';
 import { CurrentUser } from '../models/auth.model';
 
 /**
@@ -46,9 +46,17 @@ export const roleAccessGuard: CanActivateFn = (
     return router.createUrlTree(['/hr/dashboard']);
   }
 
-  // 2. Đối chiếu URL hiện tại với danh sách SIDEBAR_MENU_ITEMS
+  // 2. Bảo vệ đặc biệt cho route đăng/sửa tin tuyển dụng (/hr/post-job): Chỉ ADMIN và HR mới được phép
   const rawUrl = state.url.split('?')[0].split('#')[0].replace(/\/+$/, '');
+  if (rawUrl === '/hr/post-job' || rawUrl.startsWith('/hr/post-job/')) {
+    if (isAdminRole(user) || isHrRole(user)) {
+      return true;
+    }
+    toastService.error('Truy cập bị từ chối', 'Chỉ Ban Giám Đốc và Chuyên viên HR mới có quyền đăng/chỉnh sửa tin tuyển dụng!');
+    return router.createUrlTree(['/hr/jobs']);
+  }
 
+  // 3. Đối chiếu URL hiện tại với danh sách SIDEBAR_MENU_ITEMS
   const matchedMenuItem = SIDEBAR_MENU_ITEMS.find(item => {
     const itemRoute = item.route.replace(/\/+$/, '');
     // Khớp chính xác route hoặc là route con trực tiếp (vd: /hr/post-job/123)

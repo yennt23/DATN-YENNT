@@ -427,11 +427,11 @@
           </td>
           <td class="px-6 py-4 text-gray-500 dark:text-slate-400">{{ formatDate(candidate.appliedAt) }}</td>
           <td class="px-6 py-4 text-right">
-            <a *ngIf="candidate.jobId" [routerLink]="['/hr/manage-applications', candidate.jobId]"
+            <a *ngIf="candidate.jobId && authService.canPostJob()" [routerLink]="['/hr/manage-applications', candidate.jobId]"
               class="text-gray-400 hover:text-primary transition-colors">
               <span class="material-symbols-outlined text-[20px]">more_vert</span>
             </a>
-            <span *ngIf="!candidate.jobId" class="text-gray-300 cursor-wait">
+            <span *ngIf="!candidate.jobId || !authService.canPostJob()" class="text-gray-300">
               <span class="material-symbols-outlined text-[20px]">more_vert</span>
             </span>
           </td>

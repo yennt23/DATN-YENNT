@@ -391,7 +391,7 @@ NẾU người dùng hỏi ngoài phạm vi (chính trị, giải trí không li
                             throw;
                         }
 
-                        var urlWithKey = baseModelUrl + "&key=" + System.Net.WebUtility.UrlEncode(key);
+                        var urlWithKey = DATN.Services.Implements.GeminiApiKeyProvider.BuildGenerateContentUrl(key, "gemini-2.5-flash", isStream: true);
                         try
                         {
                             var req = new HttpRequestMessage(HttpMethod.Post, urlWithKey)

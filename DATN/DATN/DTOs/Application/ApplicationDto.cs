@@ -49,6 +49,8 @@ public class ApplicationDto
 
     // ── 7 Business Rules Guard & Warning Badges ────────────────────────────
     public string? CitizenId { get; set; }
+    public string? Hometown { get; set; }
+    public string? YearOfBirth { get; set; }
     public string? PhoneNormalized { get; set; }
     public int DuplicateCount { get; set; } = 1;
     public bool IsBlacklisted { get; set; }

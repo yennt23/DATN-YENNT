@@ -1,5 +1,6 @@
 import { Component, OnInit, inject, signal, computed, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { EmployeeService, EmployeeDto, CreateEmployeeRequest, DepartmentLookupDto, ManagerLookupDto } from '../../../services/employee';
@@ -65,6 +66,7 @@ export interface PermissionMatrixRow {
 export class EmployeeManagement implements OnInit {
   private employeeService = inject(EmployeeService);
   private authService = inject(AuthService);
+  private http = inject(HttpClient);
   private fb = inject(FormBuilder);
   private cdr = inject(ChangeDetectorRef);
   private router = inject(Router);
@@ -138,15 +140,15 @@ export class EmployeeManagement implements OnInit {
     {
       code: 'ADMIN',
       title: 'Ban Giám Đốc / Super Admin',
-      subtitle: 'Toàn quyền hệ thống (Full Access)',
-      badgeText: 'Được làm tất cả (100% quyền)',
+      subtitle: 'Toàn quyền hệ thống (Full Access - 12/12 Menu)',
+      badgeText: 'Chức cao nhất — Toàn quyền 100%',
       dataScope: 'Toàn nhà máy — Tất cả 7 phòng ban & phân xưởng',
       allowedActions: [
-        'Toàn quyền truy cập và thao tác trên tất cả 12 phân hệ',
+        'Cấp duy nhất hiển thị và toàn quyền thao tác trên tất cả 12/12 Menu hệ thống',
         'Phê duyệt / Từ chối định biên tuyển dụng (Job Requisition)',
         'Xem và xử lý mọi Chiến dịch, Hồ sơ ứng viên, Phỏng vấn & Onboarding toàn nhà máy',
         'Toàn quyền Thêm mới, Chỉnh sửa, Phân quyền, Khóa/Mở khóa mọi tài khoản (kể cả Giám đốc & Trưởng phòng)',
-        'Xem Báo cáo & SLA toàn nhà máy, Cấu hình Hệ thống & Trọng số AI'
+        'Độc quyền truy cập Cài đặt Hệ thống (Quản lý Gemini API Keys, Cấu hình SMTP, Trọng số AI)'
       ],
       restrictedActions: [
         'Không bị giới hạn phân hệ nào (Chỉ chặn tự khóa tài khoản của chính mình để an toàn hệ thống)'
@@ -155,57 +157,55 @@ export class EmployeeManagement implements OnInit {
     {
       code: 'MANAGER',
       title: 'Trưởng Phòng / Quản Đốc Xưởng',
-      subtitle: 'Quản lý theo Bộ phận (Department Isolation)',
+      subtitle: 'Quản lý theo Bộ phận (5/12 Menu)',
       badgeText: 'Quản lý trong phạm vi Xưởng/Phòng ban',
       dataScope: 'Chỉ dữ liệu thuộc Phòng ban / Phân xưởng của mình (PROD_LINE, TECH_MNT, QA_QC, WH_LOGS...)',
       allowedActions: [
-        'Tạo đề xuất tuyển dụng (Job Requisition) cho phân xưởng của mình',
-        'Xem & Duyệt hồ sơ ứng viên khối Kỹ thuật thuộc xưởng mình do HR chuyển sang',
-        'Trực tiếp chấm phỏng vấn chuyên môn & theo dõi tiến độ Onboarding nhân sự mới của xưởng',
+        'Hiển thị 5 Menu: Tổng Quan, Chiến Dịch Việc Làm, Lịch Phỏng Vấn, Cơ Cấu Nhân Sự (Xưởng mình), Báo Cáo & SLA',
+        'Tạo đề xuất nhu cầu tuyển dụng (+ Đề Xuất Tuyển Dụng) và theo dõi tiến độ chiến dịch của xưởng mình',
+        'Xem lịch phỏng vấn & Trực tiếp chấm phỏng vấn đánh giá ứng viên thuộc phân xưởng',
         'Quản lý nhân sự cấp dưới (Thêm / Sửa / Khóa Chuyên viên HR hoặc Phỏng vấn viên) trong chính phòng ban mình',
         'Xem Báo cáo & SLA tuyển dụng của bộ phận mình'
       ],
       restrictedActions: [
-        'Không xem được hồ sơ ứng viên hoặc nhân sự của phân xưởng khác',
+        'Ẩn các menu vận hành của HR: Sàng lọc Hồ sơ AI, Hồ sơ Ứng tuyển, Tiếp nhận & Onboarding, Kho Nhân Tài, Tiêu chuẩn Kỹ năng, Chatbot FAQ',
         'Không được tạo, chỉnh sửa hoặc khóa tài khoản Ban Giám Đốc (ADMIN) hay Trưởng phòng (MANAGER) khác',
-        'Không truy cập Cài đặt Hệ thống'
+        'Không truy cập Cài đặt Hệ thống và không duyệt định biên ngân sách'
       ]
     },
     {
       code: 'HR',
       title: 'Chuyên Viên Nhân Sự (HR)',
-      subtitle: 'Vận hành Tuyển dụng Toàn nhà máy',
-      badgeText: 'Điều phối xuyên suốt quy trình tuyển dụng',
-      dataScope: 'Toàn bộ Chiến dịch việc làm, Hồ sơ ứng viên, Lịch phỏng vấn & Onboarding các xưởng',
+      subtitle: 'Vận hành Tuyển dụng (8/12 Menu)',
+      badgeText: 'Điều phối quy trình tuyển dụng',
+      dataScope: 'Chiến dịch việc làm, Hồ sơ ứng viên, Lịch phỏng vấn & Onboarding các xưởng',
       allowedActions: [
+        'Hiển thị 8 Menu: Tổng Quan, Sàng Lọc Hồ Sơ, Chiến Dịch Việc Làm, Hồ Sơ Ứng Tuyển, Lịch Phỏng Vấn, Tiếp Nhận & Onboarding, Kho Nhân Tài, Tiêu Chuẩn Kỹ Năng, Huấn Luyện Chatbot FAQ',
         'Đăng tin tuyển dụng, Gán link Google Form & tạo mã QR, Đồng bộ Google Sheet',
-        'Chạy AI Sàng lọc CV hàng loạt & Cấu hình tiêu chí kỹ năng',
-        'Quản lý Hồ sơ ứng tuyển: Sàng lọc CV, Bàn phỏng vấn miệng nhanh Walk-in 1-Click, Chuyển Quản đốc duyệt, Xếp lịch PV hàng loạt',
-        'Quản lý Tiếp nhận & Onboarding: Cập nhật khám sức khỏe (KSK), CCCD, Cấp mã nhân viên, Xử lý Dự bị (Waitlist) & No-Show',
-        'Quản lý Kho Nhân Tài (Talent Pool), Ngân hàng câu hỏi, Huấn luyện Chatbot FAQ & Xem danh bạ Cơ cấu nhân sự (Chỉ xem)'
+        'Chạy AI Sàng lọc CV hàng loạt & Cấu hình tiêu chuẩn kỹ năng',
+        'Quản lý Hồ sơ ứng tuyển: Tiếp nhận hồ sơ, gửi email xác nhận, xếp lịch PV, gửi Offer trúng tuyển',
+        'Quản lý Tiếp nhận & Onboarding: Kiểm tra giấy tờ ứng viên nộp, KSK, Cấp mã nhân viên, Xử lý Dự bị & No-Show'
       ],
       restrictedActions: [
+        'Ẩn và không truy cập: Cơ cấu Nhân sự & Phân quyền, Báo cáo & SLA cấp quản lý, Ngân hàng Câu hỏi chuyên môn, Cài đặt Hệ thống',
         'Không có quyền Phê duyệt định biên của Ban Giám Đốc',
-        'Không có quyền Thêm / Sửa / Khóa tài khoản nhân sự nội bộ',
-        'Không truy cập Cài đặt Hệ thống'
+        'Không có quyền Thêm / Sửa / Khóa tài khoản nhân sự nội bộ'
       ]
     },
     {
       code: 'INTERVIEWER',
       title: 'Hội Đồng Phỏng Vấn',
-      subtitle: 'Đánh giá Chuyên môn & Đề thi Kỹ thuật',
+      subtitle: 'Đánh giá Chuyên môn & Đề thi (3/12 Menu)',
       badgeText: 'Chấm phỏng vấn & Soạn ngân hàng đề',
-      dataScope: 'Chỉ các Hồ sơ ứng viên và Lịch phỏng vấn được phân công',
+      dataScope: 'Chỉ các Lịch phỏng vấn được phân công & Ngân hàng câu hỏi',
       allowedActions: [
+        'Hiển thị 3 Menu: Tổng Quan, Lịch Phỏng Vấn, Ngân Hàng Câu Hỏi',
         'Xem Tổng quan công việc & Lịch phỏng vấn được phân công',
-        'Xem chi tiết CV / Tờ khai của ứng viên trong ca phỏng vấn',
-        'Chấm điểm phỏng vấn chuyên môn, tích Checklist phỏng vấn miệng nhanh & ghi nhận xét đánh giá',
+        'Chấm điểm phỏng vấn chuyên môn, nhận xét đánh giá & gửi thư Offer sau khi chấm Đạt',
         'Biên soạn và quản lý câu hỏi trắc nghiệm / bài thi kỹ thuật trong Ngân hàng Câu hỏi'
       ],
       restrictedActions: [
-        'Không được đăng tin tuyển dụng, không vào AI Sàng lọc CV hay Kho nhân tài',
-        'Không truy cập Tiếp nhận & Onboarding (Cấp mã NV)',
-        'Không truy cập Cơ cấu nhân sự, Báo cáo SLA và Cài đặt hệ thống'
+        'Ẩn toàn bộ 9 menu còn lại: Sàng lọc Hồ sơ, Chiến dịch Việc làm, Hồ sơ Ứng tuyển, Tiếp nhận & Onboarding, Kho Nhân Tài, Cơ cấu Nhân sự, Tiêu chuẩn Kỹ năng, Báo cáo & SLA, Chatbot FAQ, Cài đặt Hệ thống'
       ]
     }
   ];
@@ -224,34 +224,34 @@ export class EmployeeManagement implements OnInit {
     {
       moduleGroup: 'Bàn làm việc',
       featureName: '2. AI Sàng lọc Hồ sơ',
-      description: 'Upload CV PDF hàng loạt, chấm điểm tự động & cấu hình trọng số',
+      description: 'Upload CV PDF hàng loạt, chấm điểm tự động & chuyển hồ sơ',
       admin: { status: 'FULL', note: 'Toàn quyền' },
-      manager: { status: 'NONE', note: 'Không truy cập' },
+      manager: { status: 'NONE', note: 'Ẩn Menu' },
       hr: { status: 'FULL', note: 'Vận hành chính' },
-      interviewer: { status: 'NONE', note: 'Không truy cập' }
+      interviewer: { status: 'NONE', note: 'Ẩn Menu' }
     },
     {
       moduleGroup: 'Nghiệp vụ Tuyển dụng',
       featureName: '3. Chiến dịch Việc làm & Duyệt định biên',
       description: 'Tạo đề xuất tuyển dụng, phê duyệt định biên, gán Google Form QR',
       admin: { status: 'FULL', note: 'Tạo & Duyệt định biên' },
-      manager: { status: 'SCOPED', note: 'Đề xuất cho xưởng mình' },
+      manager: { status: 'VIEW', note: 'Theo dõi & Đề xuất xưởng mình' },
       hr: { status: 'FULL', note: 'Đăng tin & Gán QR Form' },
-      interviewer: { status: 'NONE', note: 'Không truy cập' }
+      interviewer: { status: 'NONE', note: 'Ẩn Menu' }
     },
     {
       moduleGroup: 'Nghiệp vụ Tuyển dụng',
-      featureName: '4. Hồ sơ Ứng tuyển & Bàn PV Miệng',
-      description: 'Sàng lọc hồ sơ, Bàn PV miệng nhanh 1-Click, Chuyển Quản đốc, Xếp ca PV',
+      featureName: '4. Hồ sơ Ứng tuyển',
+      description: 'Tiếp nhận hồ sơ, đồng bộ Google Form, xếp ca PV & gửi Offer',
       admin: { status: 'FULL', note: 'Tất cả hồ sơ' },
-      manager: { status: 'SCOPED', note: 'Duyệt hồ sơ xưởng mình' },
+      manager: { status: 'NONE', note: 'Ẩn Menu' },
       hr: { status: 'FULL', note: 'Điều phối toàn bộ' },
-      interviewer: { status: 'SCOPED', note: 'Chấm hồ sơ được giao' }
+      interviewer: { status: 'NONE', note: 'Ẩn Menu' }
     },
     {
       moduleGroup: 'Nghiệp vụ Tuyển dụng',
       featureName: '5. Lịch Phỏng vấn',
-      description: 'Quản lý ca phỏng vấn theo lô, phân công người phỏng vấn & chấm điểm',
+      description: 'Quản lý ca phỏng vấn, chấm điểm đánh giá & gửi thư Offer',
       admin: { status: 'FULL', note: 'Toàn quyền' },
       manager: { status: 'SCOPED', note: 'Phỏng vấn xưởng mình' },
       hr: { status: 'FULL', note: 'Xếp lịch & Điều phối' },
@@ -260,46 +260,46 @@ export class EmployeeManagement implements OnInit {
     {
       moduleGroup: 'Nghiệp vụ Tuyển dụng',
       featureName: '6. Tiếp nhận & Onboarding',
-      description: 'Kiểm soát KSK, CCCD, Cấp mã nhân viên, Dự bị (Waitlist) & No-Show',
+      description: 'Kiểm soát giấy tờ ứng viên nộp, KSK, CCCD, Cấp mã nhân viên',
       admin: { status: 'FULL', note: 'Toàn quyền' },
-      manager: { status: 'SCOPED', note: 'Theo dõi nhân sự xưởng' },
+      manager: { status: 'NONE', note: 'Ẩn Menu' },
       hr: { status: 'FULL', note: 'Xét KSK & Cấp mã NV' },
-      interviewer: { status: 'NONE', note: 'Không truy cập' }
+      interviewer: { status: 'NONE', note: 'Ẩn Menu' }
     },
-    {
-      moduleGroup: 'Nghiệp vụ Tuyển dụng',
-      featureName: '7. Kho Nhân Tài (Talent Pool)',
-      description: 'Lưu trữ và tái tuyển dụng ứng viên tiềm năng / nhân viên cũ',
-      admin: { status: 'FULL', note: 'Toàn quyền' },
-      manager: { status: 'NONE', note: 'Không truy cập' },
-      hr: { status: 'FULL', note: 'Khai thác & Mời lại' },
-      interviewer: { status: 'NONE', note: 'Không truy cập' }
-    },
+    // {
+    //   moduleGroup: 'Nghiệp vụ Tuyển dụng',
+    //   featureName: '7. Kho Nhân Tài (Talent Pool)',
+    //   description: 'Lưu trữ và tái tuyển dụng ứng viên tiềm năng / nhân viên cũ',
+    //   admin: { status: 'FULL', note: 'Toàn quyền' },
+    //   manager: { status: 'NONE', note: 'Ẩn Menu' },
+    //   hr: { status: 'FULL', note: 'Khai thác & Mời lại' },
+    //   interviewer: { status: 'NONE', note: 'Ẩn Menu' }
+    // },
     {
       moduleGroup: 'Tổ chức & Đánh giá',
       featureName: '8. Cơ cấu Nhân sự & Phân quyền',
       description: 'Quản lý sơ đồ tổ chức, cấp tài khoản và phân quyền theo phòng ban',
       admin: { status: 'FULL', note: 'Toàn quyền mọi cấp' },
       manager: { status: 'SCOPED', note: 'Quản lý cấp dưới thuộc xưởng' },
-      hr: { status: 'VIEW', note: 'Chỉ xem danh bạ & quyền' },
-      interviewer: { status: 'NONE', note: 'Không truy cập' }
+      hr: { status: 'NONE', note: 'Ẩn Menu' },
+      interviewer: { status: 'NONE', note: 'Ẩn Menu' }
     },
     {
       moduleGroup: 'Tổ chức & Đánh giá',
       featureName: '9. Tiêu chuẩn Kỹ năng',
-      description: 'Danh mục kỹ năng công nghiệp và từ khóa phục vụ chấm điểm',
+      description: 'Danh mục kỹ năng công nghiệp và từ khóa phục vụ chấm điểm AI',
       admin: { status: 'FULL', note: 'Toàn quyền' },
-      manager: { status: 'SCOPED', note: 'Đóng góp tiêu chuẩn' },
+      manager: { status: 'NONE', note: 'Ẩn Menu' },
       hr: { status: 'FULL', note: 'Quản lý danh mục' },
-      interviewer: { status: 'NONE', note: 'Không truy cập' }
+      interviewer: { status: 'NONE', note: 'Ẩn Menu' }
     },
     {
       moduleGroup: 'Tổ chức & Đánh giá',
       featureName: '10. Ngân hàng Câu hỏi & Đề thi',
-      description: 'Quản lý câu hỏi trắc nghiệm và bài test tay nghề / code',
+      description: 'Quản lý câu hỏi trắc nghiệm và bài test tay nghề / kỹ thuật',
       admin: { status: 'FULL', note: 'Toàn quyền' },
-      manager: { status: 'FULL', note: 'Soạn & Duyệt đề' },
-      hr: { status: 'FULL', note: 'Quản lý đợt thi' },
+      manager: { status: 'NONE', note: 'Ẩn Menu' },
+      hr: { status: 'NONE', note: 'Ẩn Menu' },
       interviewer: { status: 'FULL', note: 'Soạn câu hỏi chuyên môn' }
     },
     {
@@ -308,35 +308,72 @@ export class EmployeeManagement implements OnInit {
       description: 'Phân tích hiệu suất tuyển dụng, cảnh báo quá hạn SLA từng khâu',
       admin: { status: 'FULL', note: 'Báo cáo toàn công ty' },
       manager: { status: 'SCOPED', note: 'Báo cáo phân xưởng' },
-      hr: { status: 'FULL', note: 'Theo dõi tiến độ SLA' },
-      interviewer: { status: 'NONE', note: 'Không truy cập' }
+      hr: { status: 'NONE', note: 'Ẩn Menu' },
+      interviewer: { status: 'NONE', note: 'Ẩn Menu' }
     },
     {
       moduleGroup: 'Hệ thống',
-      featureName: '12. Cài đặt Hệ thống & Chatbot FAQ',
-      description: 'Cấu hình tham số hệ thống, SMTP, bảo mật và kịch bản Chatbot',
-      admin: { status: 'FULL', note: 'Toàn quyền cấu hình' },
-      manager: { status: 'NONE', note: 'Không truy cập' },
-      hr: { status: 'SCOPED', note: 'Chỉ huấn luyện Chatbot FAQ' },
-      interviewer: { status: 'NONE', note: 'Không truy cập' }
+      featureName: '12. Huấn luyện Chatbot & Cài đặt Hệ thống',
+      description: 'Cấu hình Gemini API Keys, SMTP, tham số hệ thống & kịch bản Chatbot',
+      admin: { status: 'FULL', note: 'Độc quyền Cài đặt Hệ thống & Chatbot' },
+      manager: { status: 'NONE', note: 'Ẩn Menu' },
+      hr: { status: 'SCOPED', note: 'Chỉ hiển thị Huấn luyện Chatbot FAQ' },
+      interviewer: { status: 'NONE', note: 'Ẩn Menu' }
     }
   ];
 
-  // Scope: Nếu là Trưởng phòng, chỉ thống kê và hiển thị trong phạm vi phòng ban của họ
+  // Scope: Nếu là Trưởng phòng, chỉ thống kê và hiển thị các nhân viên làm việc dưới trướng trong phạm vi phòng ban của họ
   scopedEmployees = computed(() => {
     const all = this.employees();
-    if (this.isDepartmentManager() && this.currentUserDepartmentCode()) {
-      return all.filter(e => e.departmentCode === this.currentUserDepartmentCode());
+    if (this.isDepartmentManager()) {
+      const current = this.currentUser();
+      const deptCode = this.currentUserDepartmentCode();
+      const deptId = current?.departmentId;
+      return all.filter(e =>
+        (deptCode && e.departmentCode === deptCode) ||
+        (deptId && e.departmentId === deptId) ||
+        (current?.userId && e.managerId === current.userId)
+      );
     }
     return all;
   });
 
+  // Danh sách nhân viên làm việc DƯỚI TRƯỚNG của Trưởng phòng (không tính bản thân Trưởng phòng)
+  subordinateEmployees = computed(() => {
+    const scoped = this.scopedEmployees();
+    const current = this.currentUser();
+    if (this.isDepartmentManager()) {
+      return scoped.filter(e =>
+        e.userId !== current?.userId &&
+        e.email?.toLowerCase() !== current?.email?.toLowerCase() &&
+        e.role !== 'ADMIN' &&
+        e.role !== 'MANAGER'
+      );
+    }
+    return scoped;
+  });
+
   // KPI Statistics (Tự động tính toán lại theo Signal Computed)
-  totalEmployees = computed(() => this.scopedEmployees().length);
+  totalEmployees = computed(() => {
+    if (this.isDepartmentManager()) {
+      return this.subordinateEmployees().length;
+    }
+    return this.scopedEmployees().length;
+  });
   totalDirectors = computed(() => this.scopedEmployees().filter(e => e.role === 'ADMIN').length);
   totalManagers = computed(() => this.scopedEmployees().filter(e => e.role === 'MANAGER').length);
-  totalHr = computed(() => this.scopedEmployees().filter(e => e.role === 'HR').length);
-  totalInterviewers = computed(() => this.scopedEmployees().filter(e => e.role === 'INTERVIEWER').length);
+  totalHr = computed(() => {
+    const source = this.isDepartmentManager() ? this.subordinateEmployees() : this.scopedEmployees();
+    return source.filter(e => e.role === 'HR').length;
+  });
+  totalInterviewers = computed(() => {
+    const source = this.isDepartmentManager() ? this.subordinateEmployees() : this.scopedEmployees();
+    return source.filter(e => e.role === 'INTERVIEWER').length;
+  });
+  totalStaff = computed(() => {
+    const source = this.isDepartmentManager() ? this.subordinateEmployees() : this.scopedEmployees();
+    return source.filter(e => e.role === 'STAFF' || e.isHiredStaff).length;
+  });
   totalActiveDepartments = computed(() => {
     if (this.isDepartmentManager()) return 1;
     return this.departments().length;
@@ -473,7 +510,8 @@ export class EmployeeManagement implements OnInit {
     this.errorMessage.set(null);
 
     this.employeeService.getEmployees().subscribe({
-      next: (data) => {
+      next: (rawData) => {
+        const data = rawData || [];
         this.employees.set(data);
 
         // 1. Nhận diện User đang đăng nhập để kích hoạt Smart Role-Based UI
@@ -484,25 +522,35 @@ export class EmployeeManagement implements OnInit {
             (e.email && authUser.email && e.email.toLowerCase() === authUser.email.toLowerCase())
           );
 
+          const resolvedDeptCode = myEmp?.departmentCode || authUser.departmentCode;
+          const resolvedDeptName = myEmp?.departmentName || authUser.departmentName;
+          const resolvedDeptId = myEmp?.departmentId || authUser.departmentId;
+
           this.currentUser.set({
-            userId: authUser.userId,
+            userId: myEmp?.userId || authUser.userId,
             email: authUser.email,
-            name: authUser.name,
+            name: myEmp?.fullName || authUser.name,
             role: authUser.role,
-            departmentId: myEmp?.departmentId,
-            departmentCode: myEmp?.departmentCode,
-            departmentName: myEmp?.departmentName
+            departmentId: resolvedDeptId,
+            departmentCode: resolvedDeptCode,
+            departmentName: resolvedDeptName
           });
 
-          // Nếu là Trưởng phòng -> Tự động lock và chọn theo phòng ban của họ
-          if (authUser.role === 'MANAGER' && myEmp?.departmentCode) {
-            this.selectedDeptCode.set(myEmp.departmentCode);
+          // Nếu là Trưởng phòng -> Tự động lock về chế độ danh sách nhân viên dưới trướng của phòng ban đó
+          if (authUser.role === 'MANAGER' || authUser.role === 'DepartmentManager') {
+            this.viewMode.set('table');
+            if (resolvedDeptCode) {
+              this.selectedDeptCode.set(resolvedDeptCode);
+            }
           }
         }
 
+        // Đồng bộ danh sách nhân viên đã được cấp Mã nhân viên (ConvertedEmployeeCode) có sẵn trong Database
+        this.mergeHiredEmployeesFromOnboarding();
+
         // 2. Mặc định mở rộng (Expand) các cấp Quản lý & Giám đốc
         const defaultExpanded = new Set<string>();
-        data.forEach(e => {
+        this.employees().forEach(e => {
           if (e.role === 'ADMIN' || e.role === 'MANAGER' || e.subordinatesCount > 0) {
             defaultExpanded.add(e.userId);
           }
@@ -518,6 +566,70 @@ export class EmployeeManagement implements OnInit {
         this.isLoading.set(false);
         this.cdr.detectChanges();
       }
+    });
+  }
+
+  /**
+   * Đọc danh sách nhân viên đã trúng tuyển & được cấp Mã Nhân Viên (ConvertedEmployeeCode) có sẵn trong Database từ Onboarding API
+   */
+  private mergeHiredEmployeesFromOnboarding(): void {
+    this.http.get<any>('/api/Onboarding/candidates').subscribe({
+      next: (res) => {
+        const list: any[] = res?.data || (Array.isArray(res) ? res : []);
+        const hiredList = list.filter(a =>
+          a.convertedEmployeeCode ||
+          (a.status && (a.status.toUpperCase() === 'HIRED'))
+        );
+        if (hiredList.length === 0) return;
+
+        const currentEmps = [...this.employees()];
+        const existingEmails = new Set(currentEmps.map(e => (e.email || '').trim().toLowerCase()));
+        const existingCodes = new Set(currentEmps.filter(e => e.employeeCode).map(e => e.employeeCode!));
+        let changed = false;
+
+        for (const app of hiredList) {
+          const code = app.convertedEmployeeCode;
+          const email = (app.email || app.contactEmail || `${(code || 'nv').toLowerCase()}@factory.local`).trim();
+          if ((code && existingCodes.has(code)) || (email && existingEmails.has(email.toLowerCase()))) {
+            continue;
+          }
+
+          const deptCode = app.departmentCode || app.jobDepartmentCode || 'PROD_LINE';
+          const mgr = currentEmps.find(e => e.departmentCode === deptCode && (e.role === 'MANAGER' || e.role === 'DepartmentManager'));
+
+          currentEmps.push({
+            userId: app.applicationId || app.id,
+            fullName: app.fullName || app.candidateName || app.contactName || 'Nhân viên mới',
+            email,
+            phone: app.phone || app.contactPhone || '',
+            role: 'STAFF',
+            roleName: app.jobTitle || 'Nhân viên chính thức',
+            jobTitle: app.jobTitle || 'Nhân viên phân xưởng',
+            employeeCode: code,
+            isHiredStaff: true,
+            isActive: app.status !== 'No_Show_Cancelled',
+            createdAt: app.offeredDate || app.appliedAt || new Date().toISOString(),
+            departmentId: mgr?.departmentId,
+            departmentCode: deptCode,
+            departmentName: mgr?.departmentName || app.departmentName || 'Xưởng Sản Xuất & Lắp Ráp SMT',
+            managerId: mgr?.userId,
+            managerName: mgr?.fullName,
+            subordinatesCount: 0
+          });
+          if (mgr) {
+            mgr.subordinatesCount = (mgr.subordinatesCount || 0) + 1;
+          }
+          if (code) existingCodes.add(code);
+          if (email) existingEmails.add(email.toLowerCase());
+          changed = true;
+        }
+
+        if (changed) {
+          this.employees.set(currentEmps);
+          this.cdr.detectChanges();
+        }
+      },
+      error: () => {}
     });
   }
 
@@ -952,7 +1064,10 @@ export class EmployeeManagement implements OnInit {
 
   // ==================== FILTER & SEARCH ====================
   filteredEmployees(): EmployeeDto[] {
-    let filtered = [...this.scopedEmployees()];
+    // Đối với Trưởng phòng (MANAGER): Chỉ hiển thị danh sách các nhân viên làm việc DƯỚI TRƯỚNG của phòng đó
+    let filtered = this.isDepartmentManager()
+      ? [...this.subordinateEmployees()]
+      : [...this.scopedEmployees()];
 
     // Filter theo Tab phòng ban (nếu là SuperAdmin)
     if (!this.isDepartmentManager() && this.selectedDeptCode() !== 'ALL') {
@@ -1171,7 +1286,7 @@ export class EmployeeManagement implements OnInit {
    * Tính toán sơ đồ phân cấp Quản lý -> Cấp dưới cho View Mode 'hierarchy'
    */
   getHierarchyGroups(): ManagerGroup[] {
-    const all = this.employees();
+    const all = this.scopedEmployees();
     const managers = all.filter(e => e.role === 'ADMIN' || e.role === 'MANAGER');
     const result: ManagerGroup[] = [];
 

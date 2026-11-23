@@ -60,8 +60,9 @@
 
     <!-- Profile Area at Bottom Left -->
     <div class="p-3.5 border-t border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-950">
-        <div routerLink="/hr/settings"
-            class="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-900 cursor-pointer transition-colors">
+        <div [routerLink]="authService.isSuperAdmin() ? '/hr/settings' : null"
+            [class.cursor-pointer]="authService.isSuperAdmin()"
+            class="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-900 transition-colors">
             <!-- Dynamic Initials Avatar -->
             <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
                 {{ userInitials() }}

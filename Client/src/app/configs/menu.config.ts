@@ -24,6 +24,33 @@ export interface MenuGroup {
 }
 
 /**
+ * Helper chuẩn hóa nhận diện 4 Role chính trong hệ thống:
+ * 1. ADMIN (Ban Giám Đốc - Chức cao nhất: Full quyền 100% - 12/12 menu)
+ * 2. MANAGER (Trưởng Phòng / Quản Đốc Xưởng: Quản lý cấp bộ phận - 5 menu)
+ * 3. HR (Chuyên Viên Nhân Sự: Vận hành tuyển dụng - 8 menu)
+ * 4. INTERVIEWER (Hội Đồng Phỏng Vấn: Chấm phỏng vấn & Soạn đề - 3 menu)
+ */
+export function isAdminRole(user: CurrentUser | null): boolean {
+  if (!user) return false;
+  return user.role === 'ADMIN' || user.role === 'SuperAdmin';
+}
+
+export function isManagerRole(user: CurrentUser | null): boolean {
+  if (!user) return false;
+  return user.role === 'MANAGER' || user.role === 'DepartmentManager';
+}
+
+export function isHrRole(user: CurrentUser | null): boolean {
+  if (!user) return false;
+  return user.role === 'HR' || (user.role === 'Staff' && user.departmentCode === 'HR_TEAM');
+}
+
+export function isInterviewerRole(user: CurrentUser | null): boolean {
+  if (!user) return false;
+  return user.role === 'INTERVIEWER' || (user.role === 'Staff' && user.departmentCode === 'INT_TEAM');
+}
+
+/**
  * ════════════════════════════════════════════════════════════════════════════
  * CẤU HÌNH MENU PHÂN NHÓM DOANH NGHIỆP (GROUPED NAVIGATION)
  * Hệ thống Quản lý Tuyển dụng Nhân sự (ATS) Nhà máy / KCN
@@ -39,18 +66,13 @@ export const SIDEBAR_MENU_GROUPS: MenuGroup[] = [
         label: 'Tổng Quan',
         route: '/hr/dashboard',
         icon: 'dashboard',
-        canAccess: () => true
+        canAccess: (user) => isAdminRole(user) || isManagerRole(user) || isHrRole(user) || isInterviewerRole(user)
       },
       {
         label: 'Sàng Lọc Hồ Sơ',
         route: '/hr/ai-screening',
         icon: 'fact_check',
-        canAccess: (user) => {
-          if (!user) return false;
-          const isSuper = user.role === 'SuperAdmin' || user.role === 'ADMIN' || user.departmentCode === 'ADMIN_SYS';
-          const isHr = user.departmentCode === 'HR_TEAM' || user.role === 'HR';
-          return isSuper || isHr;
-        },
+        canAccess: (user) => isAdminRole(user) || isHrRole(user),
         badge: {
           type: 'ai',
           text: 'Tự động',
@@ -69,13 +91,7 @@ export const SIDEBAR_MENU_GROUPS: MenuGroup[] = [
         label: 'Chiến Dịch Việc Làm',
         route: '/hr/jobs',
         icon: 'work',
-        canAccess: (user) => {
-          if (!user) return false;
-          const isSuper = user.role === 'SuperAdmin' || user.role === 'ADMIN' || user.departmentCode === 'ADMIN_SYS';
-          const isHr = user.departmentCode === 'HR_TEAM' || user.role === 'HR';
-          const isManager = user.role === 'DepartmentManager' || user.role === 'MANAGER';
-          return isSuper || isHr || isManager;
-        },
+        canAccess: (user) => isAdminRole(user) || isHrRole(user) || isManagerRole(user),
         badge: {
           type: 'counter',
           badgeKey: 'openJobs',
@@ -86,7 +102,7 @@ export const SIDEBAR_MENU_GROUPS: MenuGroup[] = [
         label: 'Hồ Sơ Ứng Tuyển',
         route: '/hr/applications',
         icon: 'assignment_ind',
-        canAccess: () => true,
+        canAccess: (user) => isAdminRole(user) || isHrRole(user),
         badge: {
           type: 'counter',
           badgeKey: 'pendingApplications',
@@ -97,7 +113,7 @@ export const SIDEBAR_MENU_GROUPS: MenuGroup[] = [
         label: 'Lịch Phỏng Vấn',
         route: '/hr/interviews',
         icon: 'calendar_month',
-        canAccess: () => true,
+        canAccess: (user) => isAdminRole(user) || isHrRole(user) || isManagerRole(user) || isInterviewerRole(user),
         badge: {
           type: 'counter',
           badgeKey: 'todayInterviews',
@@ -108,25 +124,14 @@ export const SIDEBAR_MENU_GROUPS: MenuGroup[] = [
         label: 'Tiếp Nhận & Onboarding',
         route: '/hr/onboarding',
         icon: 'how_to_reg',
-        canAccess: (user) => {
-          if (!user) return false;
-          const isSuper = user.role === 'SuperAdmin' || user.role === 'ADMIN' || user.departmentCode === 'ADMIN_SYS';
-          const isHr = user.departmentCode === 'HR_TEAM' || user.role === 'HR';
-          const isManager = user.role === 'DepartmentManager' || user.role === 'MANAGER';
-          return isSuper || isHr || isManager;
-        }
-      },
-      {
-        label: 'Kho Nhân Tài (Talent Pool)',
-        route: '/hr/talent-pool',
-        icon: 'folder_shared',
-        canAccess: (user) => {
-          if (!user) return false;
-          const isSuper = user.role === 'SuperAdmin' || user.role === 'ADMIN' || user.departmentCode === 'ADMIN_SYS';
-          const isHr = user.departmentCode === 'HR_TEAM' || user.role === 'HR';
-          return isSuper || isHr;
-        }
+        canAccess: (user) => isAdminRole(user) || isHrRole(user)
       }
+      // {
+      //   label: 'Kho Nhân Tài (Talent Pool)',
+      //   route: '/hr/talent-pool',
+      //   icon: 'folder_shared',
+      //   canAccess: (user) => isAdminRole(user) || isHrRole(user)
+      // }
     ]
   },
 
@@ -139,43 +144,25 @@ export const SIDEBAR_MENU_GROUPS: MenuGroup[] = [
         label: 'Cơ Cấu Nhân Sự',
         route: '/hr/employees',
         icon: 'diversity_3',
-        canAccess: (user) => {
-          if (!user) return false;
-          const isSuper = user.role === 'SuperAdmin' || user.role === 'ADMIN' || user.departmentCode === 'ADMIN_SYS';
-          const isManager = user.role === 'DepartmentManager' || user.role === 'MANAGER';
-          const isHr = user.departmentCode === 'HR_TEAM' || user.role === 'HR';
-          return isSuper || isManager || isHr;
-        }
+        canAccess: (user) => isAdminRole(user) || isManagerRole(user)
       },
       {
         label: 'Tiêu Chuẩn Kỹ Năng',
         route: '/hr/skills',
         icon: 'psychology',
-        canAccess: (user) => {
-          if (!user) return false;
-          const isSuper = user.role === 'SuperAdmin' || user.role === 'ADMIN' || user.departmentCode === 'ADMIN_SYS';
-          const isHr = user.departmentCode === 'HR_TEAM' || user.role === 'HR';
-          const isManager = user.role === 'DepartmentManager' || user.role === 'MANAGER';
-          return isSuper || isHr || isManager;
-        }
+        canAccess: (user) => isAdminRole(user) || isHrRole(user)
       },
       {
         label: 'Ngân Hàng Câu Hỏi',
         route: '/hr/question-bank',
         icon: 'quiz',
-        canAccess: () => true
+        canAccess: (user) => isAdminRole(user) || isInterviewerRole(user)
       },
       {
         label: 'Báo Cáo & SLA',
         route: '/hr/reports',
         icon: 'analytics',
-        canAccess: (user) => {
-          if (!user) return false;
-          const isSuper = user.role === 'SuperAdmin' || user.role === 'ADMIN' || user.departmentCode === 'ADMIN_SYS';
-          const isManager = user.role === 'DepartmentManager' || user.role === 'MANAGER';
-          const isHr = user.departmentCode === 'HR_TEAM' || user.role === 'HR';
-          return isSuper || isManager || isHr;
-        }
+        canAccess: (user) => isAdminRole(user) || isManagerRole(user)
       }
     ]
   },
@@ -189,21 +176,13 @@ export const SIDEBAR_MENU_GROUPS: MenuGroup[] = [
         label: 'Huấn Luyện Chatbot FAQ',
         route: '/hr/chatbot-faq',
         icon: 'smart_toy',
-        canAccess: (user) => {
-          if (!user) return false;
-          const isSuper = user.role === 'SuperAdmin' || user.role === 'ADMIN' || user.departmentCode === 'ADMIN_SYS';
-          const isHr = user.departmentCode === 'HR_TEAM' || user.role === 'HR';
-          return isSuper || isHr;
-        }
+        canAccess: (user) => isAdminRole(user) || isHrRole(user)
       },
       {
         label: 'Cài Đặt Hệ Thống',
         route: '/hr/settings',
         icon: 'settings',
-        canAccess: (user) => {
-          if (!user) return false;
-          return user.role === 'SuperAdmin' || user.role === 'ADMIN' || user.departmentCode === 'ADMIN_SYS';
-        }
+        canAccess: (user) => isAdminRole(user)
       }
     ]
   }
@@ -220,9 +199,9 @@ export const SIDEBAR_MENU_ITEMS: MenuItem[] = SIDEBAR_MENU_GROUPS.flatMap(group 
 export const DEV_ACCOUNTS: CurrentUser[] = [
   {
     id: '30000000-0000-0000-0000-000000000001',
-    fullName: 'Võ Văn Sơn',
+    fullName: 'Nguyễn Văn Giám Đốc',
     email: 'giamdoc@factory.com',
-    role: 'SuperAdmin',
+    role: 'ADMIN',
     roleDisplayName: 'Ban Giám Đốc',
     departmentId: '10000000-0000-0000-0000-000000000001',
     departmentCode: 'ADMIN_SYS',
@@ -230,9 +209,9 @@ export const DEV_ACCOUNTS: CurrentUser[] = [
   },
   {
     id: '30000000-0000-0000-0000-000000000011',
-    fullName: 'Lê Thanh Hương',
+    fullName: 'Phạm Văn Nhân Sự 1',
     email: 'hr1@factory.com',
-    role: 'Staff',
+    role: 'HR',
     roleDisplayName: 'Chuyên Viên Tuyển Dụng',
     departmentId: '10000000-0000-0000-0000-000000000002',
     departmentCode: 'HR_TEAM',
@@ -240,19 +219,19 @@ export const DEV_ACCOUNTS: CurrentUser[] = [
   },
   {
     id: '30000000-0000-0000-0000-000000000030',
-    fullName: 'Vũ Đức Thắng',
+    fullName: 'Trịnh Văn Quản Đốc Xưởng SMT',
     email: 'truong.sx@factory.com',
-    role: 'DepartmentManager',
-    roleDisplayName: 'Quản Đốc Sản Xuất',
+    role: 'MANAGER',
+    roleDisplayName: 'Trưởng Phòng / Quản Đốc',
     departmentId: '10000000-0000-0000-0000-000000000004',
     departmentCode: 'PROD_LINE',
-    departmentName: 'Xưởng Sản Xuất'
+    departmentName: 'Xưởng Sản Xuất & Lắp Ráp SMT'
   },
   {
     id: '30000000-0000-0000-0000-000000000021',
-    fullName: 'Trần Minh Quân',
+    fullName: 'Vũ Thị Phỏng Vấn Viên 1',
     email: 'pv1@factory.com',
-    role: 'Staff',
+    role: 'INTERVIEWER',
     roleDisplayName: 'Phỏng Vấn Viên Chuyên Môn',
     departmentId: '10000000-0000-0000-0000-000000000003',
     departmentCode: 'INT_TEAM',

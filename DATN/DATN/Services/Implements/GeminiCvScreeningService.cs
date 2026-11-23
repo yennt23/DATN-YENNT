@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using UglyToad.PdfPig;
 using DATN.Data;
 using DATN.DTOs.Ai;
+using DATN.Services.Interfaces;
 
 namespace DATN.Services.Implements;
 
@@ -24,6 +25,7 @@ public sealed class GeminiCvScreeningService
     private readonly DATNContext _dbContext;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly GeminiKeyPoolManager _keyPool;
+    private readonly IGeminiApiKeyProvider _apiKeyProvider;
     private readonly ILogger<GeminiCvScreeningService> _logger;
 
     private const int BatchSize = 5;
@@ -36,11 +38,13 @@ public sealed class GeminiCvScreeningService
         DATNContext dbContext,
         IHttpClientFactory httpClientFactory,
         GeminiKeyPoolManager keyPool,
+        IGeminiApiKeyProvider apiKeyProvider,
         ILogger<GeminiCvScreeningService> logger)
     {
         _dbContext = dbContext;
         _httpClientFactory = httpClientFactory;
         _keyPool = keyPool;
+        _apiKeyProvider = apiKeyProvider;
         _logger = logger;
     }
 
@@ -242,7 +246,15 @@ public sealed class GeminiCvScreeningService
             ApiKeyState keyState;
             try
             {
-                keyState = await _keyPool.AcquireKeyAsync(cancellationToken);
+                var providerKey = attempt == 1 ? _apiKeyProvider.GetApiKey("CV") : _apiKeyProvider.GetNextApiKey();
+                if (!string.IsNullOrWhiteSpace(providerKey))
+                {
+                    keyState = new ApiKeyState { ApiKey = providerKey.Trim(), LastUsedAt = DateTime.UtcNow };
+                }
+                else
+                {
+                    keyState = await _keyPool.AcquireKeyAsync(cancellationToken);
+                }
             }
             catch (OperationCanceledException)
             {
@@ -262,6 +274,7 @@ public sealed class GeminiCvScreeningService
                     attempt, MaxRetryPerBatch, keyState.Preview);
 
                 var results = await CallGeminiBatchAsync(job, batch, keyState.ApiKey, cancellationToken);
+                _apiKeyProvider.ReportSuccess(keyState.ApiKey);
 
                 // Map FileName tá»« input vá» result (Gemini khÃ´ng biáº¿t tÃªn file)
                 foreach (var r in results)
@@ -272,9 +285,10 @@ public sealed class GeminiCvScreeningService
 
                 return results;
             }
-            catch (GeminiRateLimitException)
+            catch (GeminiRateLimitException ex)
             {
-                // 429/503 â†’ bÃ¡o pool vÃ  retry ngay vá»›i key khÃ¡c
+                // 429/503 -> báo cả provider và pool rồi retry với key khác
+                _apiKeyProvider.ReportFailure(keyState.ApiKey, ex.Message);
                 _keyPool.ReportRateLimit(keyState.ApiKey);
                 _logger.LogWarning(
                     "âš ï¸ Key [{Key}] bá»‹ 429 á»Ÿ Attempt {Attempt}. Pool sáº½ cáº¥p key khÃ¡c.",
@@ -344,12 +358,12 @@ public sealed class GeminiCvScreeningService
         var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
 
         var client = _httpClientFactory.CreateClient("GeminiClient");
-        var modelsToTry = new[] { GeminiModel, "gemini-3-flash-preview", "gemini-2.5-flash-lite" };
+        var modelsToTry = new[] { GeminiModel, "gemini-3-flash-preview", "gemini-2.5-flash-lite", "gemini-2.0-flash" };
         HttpResponseMessage? response = null;
 
         foreach (var model in modelsToTry)
         {
-            var url = string.Format(GeminiApiBase, model, apiKey);
+            var url = GeminiApiKeyProvider.BuildGenerateContentUrl(apiKey, model);
             using var reqContent = new StringContent(jsonBody, Encoding.UTF8, "application/json");
             response = await client.PostAsync(url, reqContent, cancellationToken);
             if (response.IsSuccessStatusCode)

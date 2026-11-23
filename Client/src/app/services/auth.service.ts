@@ -29,59 +29,60 @@ export class AuthService {
   currentUser = signal<CurrentUser | null>(null);
 
   /**
-   * Computed Signal: Kiểm tra quyền SuperAdmin hoặc thuộc Ban Giám Đốc (ADMIN_SYS)
+   * Computed Signal: Kiểm tra quyền SuperAdmin / Ban Giám Đốc (Chức cao nhất - Full quyền 100%)
    */
   isSuperAdmin = computed(() => {
     const user = this.currentUser();
     if (!user) return false;
-    return user.role === 'SuperAdmin' || user.role === 'ADMIN' || user.departmentCode === 'ADMIN_SYS';
+    return user.role === 'SuperAdmin' || user.role === 'ADMIN';
   });
 
   /**
-   * Computed Signal: Kiểm tra thuộc phòng Nhân sự (HR_TEAM / HR)
+   * Computed Signal: Kiểm tra vai trò Trưởng phòng / Quản đốc (MANAGER)
+   */
+  isDepartmentManager = computed(() => {
+    const user = this.currentUser();
+    if (!user) return false;
+    return user.role === 'DepartmentManager' || user.role === 'MANAGER';
+  });
+
+  /**
+   * Computed Signal: Kiểm tra vai trò Chuyên viên Nhân sự (HR)
    */
   isHrMember = computed(() => {
     const user = this.currentUser();
     if (!user) return false;
-    return user.departmentCode === 'HR_TEAM' || user.role === 'HR';
+    return user.role === 'HR' || (user.role === 'Staff' && user.departmentCode === 'HR_TEAM');
   });
 
   /**
-   * Computed Signal: Kiểm tra cấp quản lý (SuperAdmin hoặc DepartmentManager của các phòng ban)
+   * Computed Signal: Kiểm tra vai trò Hội đồng Phỏng vấn (INTERVIEWER)
+   */
+  isInterviewer = computed(() => {
+    const user = this.currentUser();
+    if (!user) return false;
+    return user.role === 'INTERVIEWER' || (user.role === 'Staff' && user.departmentCode === 'INT_TEAM');
+  });
+
+  /**
+   * Computed Signal: Kiểm tra cấp quản lý (Ban Giám Đốc hoặc Trưởng phòng/Quản đốc)
    */
   isManagerLevel = computed(() => {
-    const user = this.currentUser();
-    if (!user) return false;
-    return (
-      user.role === 'SuperAdmin' ||
-      user.role === 'ADMIN' ||
-      user.role === 'DepartmentManager' ||
-      user.role === 'MANAGER' ||
-      user.departmentCode === 'ADMIN_SYS'
-    );
+    return this.isSuperAdmin() || this.isDepartmentManager();
   });
 
   /**
-   * Computed Signal: Chỉ trả về true nếu là SuperAdmin hoặc thuộc HR_TEAM
+   * Computed Signal: Chỉ trả về true nếu là Ban Giám Đốc (ADMIN) hoặc Chuyên viên HR
    */
   canPostJob = computed(() => {
-    const user = this.currentUser();
-    if (!user) return false;
-    const isSuper = user.role === 'SuperAdmin' || user.role === 'ADMIN' || user.departmentCode === 'ADMIN_SYS';
-    const isHr = user.departmentCode === 'HR_TEAM' || user.role === 'HR';
-    return isSuper || isHr;
+    return this.isSuperAdmin() || this.isHrMember();
   });
 
   /**
-   * Computed Signal: Kiểm tra là Quản đốc / Trưởng bộ phận của các xưởng kỹ thuật/sản xuất
+   * Computed Signal: Kiểm tra là Quản đốc / Trưởng bộ phận (được tạo Đề xuất tuyển dụng)
    */
   isPlantManager = computed(() => {
-    const user = this.currentUser();
-    if (!user) return false;
-    return (
-      (user.role === 'DepartmentManager' || user.role === 'MANAGER') &&
-      ['PROD_LINE', 'WH_LOGS', 'TECH_MNT', 'QA_QC'].includes(user.departmentCode || '')
-    );
+    return this.isDepartmentManager();
   });
 
   constructor() {
@@ -129,7 +130,17 @@ export class AuthService {
   decodeJwtToken(token: string): CurrentUser | null {
     try {
       const decoded: any = jwtDecode(token);
-      const rawRole = (decoded['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] || decoded['role'] || 'Staff') as AppRole;
+      const rawRoleClaim = decoded['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] || decoded['role'] || 'Staff';
+      let rawRole: AppRole = 'Staff';
+      if (Array.isArray(rawRoleClaim)) {
+        if (rawRoleClaim.includes('ADMIN') || rawRoleClaim.includes('SuperAdmin')) rawRole = 'ADMIN';
+        else if (rawRoleClaim.includes('MANAGER') || rawRoleClaim.includes('DepartmentManager')) rawRole = 'MANAGER';
+        else if (rawRoleClaim.includes('HR')) rawRole = 'HR';
+        else if (rawRoleClaim.includes('INTERVIEWER')) rawRole = 'INTERVIEWER';
+        else rawRole = (rawRoleClaim[0] || 'Staff') as AppRole;
+      } else {
+        rawRole = rawRoleClaim as AppRole;
+      }
       const rawFullName = decoded['FullName'] || decoded['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] || decoded['name'] || 'Người dùng';
       const rawEmail = decoded['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] || decoded['email'] || '';
       const rawId = decoded['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] || decoded['sub'] || decoded['id'] || '';

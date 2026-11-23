@@ -222,7 +222,7 @@ public class AiScreeningService : IAiScreeningService
                 {
                     try
                     {
-                        var apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
+                        var apiUrl = GeminiApiKeyProvider.BuildGenerateContentUrl(apiKey, model);
                         using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
                         response = await _httpClient.PostAsync(apiUrl, content);
                         if (response.IsSuccessStatusCode)

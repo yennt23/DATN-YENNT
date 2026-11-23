@@ -19,6 +19,9 @@ export interface EmployeeDto {
   managerId?: string;
   managerName?: string;
   subordinatesCount: number;
+  employeeCode?: string;
+  jobTitle?: string;
+  isHiredStaff?: boolean;
 
   // Audit Trail
   lockedAt?: string;

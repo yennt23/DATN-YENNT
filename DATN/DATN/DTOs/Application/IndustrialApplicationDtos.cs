@@ -64,6 +64,7 @@ public class QuickWalkInEvalRequest
 
     public string? FullName { get; set; }
     public string? Phone { get; set; }
+    public string? Email { get; set; }
     public string? YearOfBirth { get; set; }
     public string? Cccd { get; set; }
     public string? Hometown { get; set; }
@@ -74,6 +75,14 @@ public class QuickWalkInEvalRequest
 
     /// <summary>'InterviewPassed' (Đạt ngay -> chuyển Onboarding) hoặc 'Rejected' (Loại)</summary>
     public string TargetStatus { get; set; } = "InterviewPassed";
+}
+
+/// <summary>
+/// DTO gửi email xác nhận tiếp nhận hồ sơ thủ công
+/// </summary>
+public class SendAckEmailRequest
+{
+    public string? Email { get; set; }
 }
 
 /// <summary>
