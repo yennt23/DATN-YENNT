@@ -558,7 +558,12 @@ export class OnboardingManagementComponent implements OnInit {
         this.records.update(list =>
           list.map(r =>
             r.applicationId === item.applicationId
-              ? { ...r, offerStatus: accepted ? 'Offer_Accepted' : 'Offer_Declined', offerResponseNote: note }
+              ? {
+                  ...r,
+                  offerStatus: accepted ? 'Offer_Accepted' : 'Offer_Declined',
+                  status: accepted ? r.status : 'No_Show_Cancelled',
+                  offerResponseNote: note
+                }
               : r
           )
         );

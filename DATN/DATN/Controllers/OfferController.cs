@@ -218,36 +218,63 @@ namespace DATN.Controllers
                     .OrderByDescending(n => n.CreatedAt)
                     .FirstOrDefaultAsync();
 
-                if (note == null)
-                {
-                    return NotFound(new { success = false, message = "Chưa có chi tiết Offer cho hồ sơ này." });
-                }
+                var utcSentDateTime = DateTime.SpecifyKind(
+                    note?.CreatedAt ?? (app.LastStageChangedAt != default ? app.LastStageChangedAt : app.AppliedAt),
+                    DateTimeKind.Utc
+                );
 
-                var json = note.Note.Substring(OfferSnapshotPrefix.Length);
-                var snapshot = JsonSerializer.Deserialize<OfferSnapshotDto>(json);
-                if (snapshot == null)
+                if (note != null)
                 {
-                    return NotFound(new { success = false, message = "Không đọc được dữ liệu Offer." });
-                }
-
-                // Convert CreatedAt to UTC ISO 8601 format for proper timezone handling on frontend
-                var utcDateTime = DateTime.SpecifyKind(note.CreatedAt, DateTimeKind.Utc);
-                
-                return Ok(new
-                {
-                    success = true,
-                    data = new
+                    var json = note.Note.Substring(OfferSnapshotPrefix.Length);
+                    var snapshot = JsonSerializer.Deserialize<OfferSnapshotDto>(json);
+                    if (snapshot != null)
                     {
-                        applicationId,
-                        candidateName = app.Candidate?.FullName ?? snapshot.CandidateName,
-                        position = snapshot.Position,
-                        salary = snapshot.Salary,
-                        startDate = snapshot.StartDate,
-                        expiryDate = snapshot.ExpiryDate,
-                        contractType = snapshot.ContractType,
-                        offerSentAt = utcDateTime.ToString("o")  // ISO 8601 format with Z suffix
+                        return Ok(new
+                        {
+                            success = true,
+                            data = new
+                            {
+                                applicationId,
+                                candidateName = app.ContactName ?? app.Candidate?.FullName ?? snapshot.CandidateName,
+                                position = !string.IsNullOrWhiteSpace(snapshot.Position) ? snapshot.Position : (app.Job?.Title ?? "Vị trí tuyển dụng"),
+                                salary = snapshot.Salary > 0 ? snapshot.Salary : (app.OfferedSalary ?? 0),
+                                startDate = snapshot.StartDate,
+                                expiryDate = snapshot.ExpiryDate,
+                                contractType = snapshot.ContractType,
+                                note = app.OfferResponseNote ?? string.Empty,
+                                offerSentAt = utcSentDateTime.ToString("o")
+                            }
+                        });
                     }
-                });
+                }
+
+                // Fallback: Lấy trực tiếp từ dữ liệu Offer đã lưu trên bảng Applications (SendOfferAsync)
+                if (app.OfferedSalary.HasValue || !string.IsNullOrWhiteSpace(app.OfferStatus) && app.OfferStatus != "Not_Required")
+                {
+                    var sentDate = app.LastStageChangedAt != default ? app.LastStageChangedAt : app.AppliedAt;
+                    var startDate = sentDate.AddDays(7).ToString("yyyy-MM-dd");
+                    var expiryDate = (app.OfferExpiresAt ?? sentDate.AddDays(3)).ToString("yyyy-MM-dd");
+                    var contractType = (app.Job?.RecruitmentTrack == "MASS_LABOR") ? "OFFICIAL_1Y" : "PROBATION";
+
+                    return Ok(new
+                    {
+                        success = true,
+                        data = new
+                        {
+                            applicationId,
+                            candidateName = app.ContactName ?? app.Candidate?.FullName ?? "Ứng viên",
+                            position = app.Job?.Title ?? "Vị trí tuyển dụng",
+                            salary = app.OfferedSalary ?? 0,
+                            startDate,
+                            expiryDate,
+                            contractType,
+                            note = app.OfferResponseNote ?? "Theo quy định chế độ đãi ngộ và phụ cấp của công ty.",
+                            offerSentAt = utcSentDateTime.ToString("o")
+                        }
+                    });
+                }
+
+                return NotFound(new { success = false, message = "Chưa có chi tiết Offer cho hồ sơ này." });
             }
             catch (Exception ex)
             {

@@ -96,6 +96,7 @@ export interface OfferDetailDto {
     startDate: string;
     expiryDate: string;
     contractType: string;
+    note?: string;
     offerSentAt: string;
 }
 

@@ -860,6 +860,24 @@ public class ApplicationService : IApplicationService
         application.Status = newStatus;
         application.LastStageChangedAt = DateTime.UtcNow;
 
+        // Đồng bộ OfferStatus để trang Admin (Hồ sơ ứng tuyển & Tiếp nhận Onboarding) tự động cập nhật theo khi ứng viên Đồng ý / Từ chối Offer
+        if (string.Equals(newStatus, "OFFER_ACCEPTED", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(newStatus, "Offer_Accepted", StringComparison.OrdinalIgnoreCase))
+        {
+            application.OfferStatus = "Offer_Accepted";
+        }
+        else if (string.Equals(newStatus, "OFFER_SENT", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(newStatus, "Offer_Sent", StringComparison.OrdinalIgnoreCase))
+        {
+            application.OfferStatus = "Offer_Sent";
+        }
+        else if (string.Equals(newStatus, "REJECTED", StringComparison.OrdinalIgnoreCase) &&
+                 !string.IsNullOrWhiteSpace(application.OfferStatus) &&
+                 application.OfferStatus != "Not_Required")
+        {
+            application.OfferStatus = "Offer_Declined";
+        }
+
         // Xóa (đánh dấu đã đọc) các thông báo SLA cũ của hồ sơ này
         var slaNotifications = await _context.Notifications
             .Where(n => n.RelatedId == applicationId.ToString() && !n.IsRead && n.Type.StartsWith("SLA_"))
@@ -961,8 +979,11 @@ public class ApplicationService : IApplicationService
                 JobTitle = a.Job.Title,
                 CompanyName = a.Job.DepartmentNavigation != null ? a.Job.DepartmentNavigation.DepartmentName : "Nhà máy KCN",
                 JobLocation = a.Job.Location ?? "Bắc Ninh",
-                Status = a.OfferStatus == "Offer_Sent" ? "Offer_Sent" 
-                       : (a.OfferStatus == "Offer_Accepted" || a.Status == "OFFER_ACCEPTED" ? "OFFER_ACCEPTED" : a.Status),
+                Status = (a.ConvertedEmployeeCode != null || a.Status == "HIRED" || a.Status == "Hired") ? "HIRED"
+                       : (a.OfferStatus == "Offer_Declined" || a.Status == "Offer_Declined" || a.Status == "REJECTED" || a.Status == "Rejected") ? "REJECTED"
+                       : (a.OfferStatus == "Offer_Accepted" || a.Status == "OFFER_ACCEPTED" || a.Status == "Offer_Accepted") ? "OFFER_ACCEPTED"
+                       : (a.OfferStatus == "Offer_Sent" || a.Status == "Offer_Sent") ? "Offer_Sent"
+                       : a.Status,
                 OfferStatus = a.OfferStatus,
                 OfferedSalary = a.OfferedSalary,
                 OfferExpiresAt = a.OfferExpiresAt,

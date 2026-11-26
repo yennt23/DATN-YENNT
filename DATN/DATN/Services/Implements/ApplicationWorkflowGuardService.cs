@@ -1014,8 +1014,36 @@ public class ApplicationWorkflowGuardService : IApplicationWorkflowGuardService
         application.OfferStatus = "Offer_Sent";
         application.OfferedSalary = offeredSalary;
         application.OfferResponseNote = note?.Trim();
+        application.OfferExpiresAt = DateTime.UtcNow.AddDays(3);
         application.Status = "Offer_Sent";
         application.LastStageChangedAt = DateTime.UtcNow;
+
+        var candidateEmail = application.ContactEmail ?? application.Candidate?.Email ?? string.Empty;
+        var candidateName = application.ContactName ?? application.Candidate?.FullName ?? "Ứng viên";
+        var jobTitle = application.Job?.Title ?? "Vị trí tuyển dụng";
+        var departmentName = application.Job?.DepartmentNavigation?.DepartmentName ?? application.Job?.Department ?? "Phòng ban";
+
+        var snapshotJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            CandidateName = candidateName,
+            CandidateEmail = candidateEmail,
+            Position = jobTitle,
+            Salary = offeredSalary,
+            StartDate = DateTime.UtcNow.AddDays(7).ToString("yyyy-MM-dd"),
+            ExpiryDate = DateTime.UtcNow.AddDays(3).ToString("yyyy-MM-dd"),
+            ContractType = application.Job?.RecruitmentTrack == "MASS_LABOR" ? "OFFICIAL_1Y" : "PROBATION",
+            CcInterviewer = false,
+            AdditionalCcEmails = ""
+        });
+
+        _context.ApplicationNotes.Add(new ApplicationNote
+        {
+            NoteId = Guid.NewGuid(),
+            ApplicationId = application.ApplicationId,
+            Note = "[OFFER_SNAPSHOT]" + snapshotJson,
+            CreatedBy = actorUserId,
+            CreatedAt = DateTime.UtcNow
+        });
 
         _context.ApplicationNotes.Add(new ApplicationNote
         {
@@ -1027,11 +1055,6 @@ public class ApplicationWorkflowGuardService : IApplicationWorkflowGuardService
         });
 
         await _context.SaveChangesAsync();
-
-        var candidateEmail = application.ContactEmail ?? application.Candidate?.Email;
-        var candidateName = application.ContactName ?? application.Candidate?.FullName ?? "Ứng viên";
-        var jobTitle = application.Job?.Title ?? "Vị trí tuyển dụng";
-        var departmentName = application.Job?.DepartmentNavigation?.DepartmentName ?? application.Job?.Department ?? "Phòng ban";
 
         bool emailSent = false;
         if (!string.IsNullOrWhiteSpace(candidateEmail) && candidateEmail.Contains("@") && !candidateEmail.EndsWith(".local", StringComparison.OrdinalIgnoreCase))

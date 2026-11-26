@@ -95,9 +95,16 @@
               Đã Trúng Tuyển
             </div>
             <div *ngIf="app.status === 'OFFER_ACCEPTED'" [title]="getTooltip('OFFER_ACCEPTED')"
-              class="cursor-help px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-xs font-bold uppercase tracking-wide flex items-center gap-1">
-              <span class="size-1.5 rounded-full bg-teal-500"></span>
-              Đã đồng ý Offer
+              class="flex flex-col items-end gap-1.5">
+              <div class="cursor-help px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-xs font-bold uppercase tracking-wide flex items-center gap-1">
+                <span class="size-1.5 rounded-full bg-teal-500"></span>
+                Đã đồng ý Offer
+              </div>
+              <button (click)="openOfferDetail(app)"
+                class="px-3 py-1 bg-teal-50 text-teal-700 border border-teal-200 text-xs font-semibold rounded-lg hover:bg-teal-100 transition-colors flex items-center gap-1">
+                <span class="material-symbols-outlined" style="font-size: 14px;">description</span>
+                Xem chi tiết Offer
+              </button>
             </div>
             <div *ngIf="app.status === 'INTERVIEW' || app.status === 'Pending_Offer' || app.status === 'Waitlist'"
               [title]="getTooltip('INTERVIEW')"
@@ -240,6 +247,10 @@
         <div class="grid grid-cols-3 gap-2 text-sm">
           <span class="text-slate-500">Ngày gửi Offer</span>
           <span class="col-span-2 font-semibold text-slate-900">{{ formatDateTime(selectedOfferDetail.offerSentAt) }}</span>
+        </div>
+        <div *ngIf="selectedOfferDetail.note" class="pt-2 border-t border-slate-100 text-sm">
+          <span class="text-slate-500 block mb-1">Nội dung &amp; Chế độ đãi ngộ:</span>
+          <div class="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-slate-800 whitespace-pre-line text-xs leading-relaxed">{{ selectedOfferDetail.note }}</div>
         </div>
       </div>
     </div>

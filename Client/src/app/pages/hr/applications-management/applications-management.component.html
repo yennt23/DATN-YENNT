@@ -371,11 +371,23 @@
                   </button>
                   }
                   @else if (app.status === 'InterviewPassed') {
-                  @if (app.offerStatus !== 'Offer_Accepted') {
+                  @if (app.offerStatus !== 'Offer_Accepted' && app.offerStatus !== 'Offer_Declined') {
                   <button type="button" (click)="openOfferModal(app, $event)"
                     class="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-semibold cursor-pointer flex items-center gap-1">
                     <span>📧</span>
                     <span>{{ app.offerStatus === 'Offer_Sent' ? 'Gửi lại Offer' : 'Gửi Offer' }}</span>
+                  </button>
+                  }
+                  @if (app.offerStatus === 'Offer_Sent') {
+                  <button type="button" (click)="submitRespondOffer(app, true, $event)"
+                    class="px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold cursor-pointer"
+                    title="Xác nhận ứng viên đã đồng ý Offer">
+                    ✓ UV Đồng ý
+                  </button>
+                  <button type="button" (click)="submitRespondOffer(app, false, $event)"
+                    class="px-2 py-1 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200 text-[11px] font-semibold cursor-pointer"
+                    title="Xác nhận ứng viên từ chối Offer">
+                    ✕ Từ chối
                   </button>
                   }
                   <button type="button" (click)="goToOnboarding(app, $event)"
@@ -743,7 +755,7 @@
               </button>
               }
               @else if (detail.status === 'InterviewPassed') {
-              @if (detail.offerStatus !== 'Offer_Accepted') {
+              @if (detail.offerStatus !== 'Offer_Accepted' && detail.offerStatus !== 'Offer_Declined') {
               <button type="button" (click)="openOfferModal(detail, $event)"
                 class="py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs">
                 <span>📧</span>
@@ -753,7 +765,11 @@
               @if (detail.offerStatus === 'Offer_Sent') {
               <button type="button" (click)="submitRespondOffer(detail, true, $event)"
                 class="py-2.5 px-3.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition cursor-pointer">
-                ✓ Xác nhận Nhận Offer
+                ✓ UV Đồng ý Offer
+              </button>
+              <button type="button" (click)="submitRespondOffer(detail, false, $event)"
+                class="py-2.5 px-3.5 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200 text-xs font-semibold transition cursor-pointer">
+                ✕ UV Từ chối Offer
               </button>
               }
               <button type="button" (click)="goToOnboarding(detail, $event)"

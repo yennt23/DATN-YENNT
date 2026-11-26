@@ -509,7 +509,13 @@ export class ApplicationsManagementComponent implements OnInit {
       : rawStatus === 'REJECTED' || rawStatus === 'REJECTED_BLACKLISTED' || rawStatus === 'REJECTED_EXCEED_RESCHEDULE' || rawStatus === 'OFFER_DECLINED' || rawStatus === 'NO_SHOW_CANCELLED' ? 'Rejected'
       : 'PENDING';
 
-    // Nhận xét AI: Lấy explanation thật, KHÔNG lấy text thô CV
+    const rawOfferStatus = (item.offerStatus || '').toUpperCase();
+    const mappedOfferStatus: IndustrialApplication['offerStatus'] =
+      rawOfferStatus === 'OFFER_ACCEPTED' || rawStatus === 'OFFER_ACCEPTED' ? 'Offer_Accepted'
+      : rawOfferStatus === 'OFFER_DECLINED' || rawStatus === 'OFFER_DECLINED' ? 'Offer_Declined'
+      : rawOfferStatus === 'OFFER_SENT' || rawStatus === 'OFFER_SENT' ? 'Offer_Sent'
+      : rawOfferStatus === 'OFFER_PENDING' || (track === 'PROFESSIONAL' && mappedStatus === 'InterviewPassed') ? 'Offer_Pending'
+      : 'Not_Required';
     let cleanExplanation = '';
     if (item.aiExplanation && item.aiExplanation.trim() !== 'AI đã phân tích kỹ năng ứng viên') {
       cleanExplanation = item.aiExplanation.trim();
@@ -611,7 +617,7 @@ export class ApplicationsManagementComponent implements OnInit {
       interviewScore: item.interviewScore ?? (item.isAiOverriddenByHuman ? 85 : null),
       isAiOverriddenByHuman: !!item.isAiOverriddenByHuman,
       aiOverrideReason: item.aiOverrideReason ?? null,
-      offerStatus: item.offerStatus || (track === 'PROFESSIONAL' && mappedStatus === 'InterviewPassed' ? 'Offer_Pending' : 'Not_Required'),
+      offerStatus: mappedOfferStatus,
       offeredSalary: item.offeredSalary ?? null,
       offerResponseNote: item.offerResponseNote ?? null,
       transferredFromJobId: item.transferredFromJobId ?? null,
@@ -801,12 +807,24 @@ export class ApplicationsManagementComponent implements OnInit {
   submitRespondOffer(app: IndustrialApplication, accepted: boolean, event?: Event): void {
     if (event) event.stopPropagation();
     const promptMsg = accepted ? `Ghi chú xác nhận ứng viên ${app.candidateName} ĐỒNG Ý Offer:` : `Nhập lý do ứng viên ${app.candidateName} TỪ CHỐI Offer:`;
-    const note = window.prompt(promptMsg, accepted ? 'Ứng viên đã ký xác nhận qua email' : 'Mức lương chưa thỏa đáng với năng lực');
+    const note = window.prompt(promptMsg, accepted ? 'Ứng viên đã xác nhận đồng ý nhận Offer' : 'Ứng viên từ chối Offer');
     if (note === null) return;
 
     const apply = () => {
-      app.offerStatus = accepted ? 'Offer_Accepted' : 'Offer_Declined';
-      app.offerResponseNote = note;
+      const nextOfferStatus = accepted ? 'Offer_Accepted' : 'Offer_Declined';
+      const nextAppStatus = accepted ? app.status : 'Rejected';
+      this.applications.update(list =>
+        list.map(item =>
+          item.applicationId === app.applicationId
+            ? { ...item, offerStatus: nextOfferStatus, status: nextAppStatus, offerResponseNote: note, isRuleRejected: !accepted ? true : item.isRuleRejected }
+            : item
+        )
+      );
+      if (this.selectedApp()?.applicationId === app.applicationId) {
+        this.selectedApp.update(curr =>
+          curr ? { ...curr, offerStatus: nextOfferStatus, status: nextAppStatus, offerResponseNote: note, isRuleRejected: !accepted ? true : curr.isRuleRejected } : null
+        );
+      }
       this.toast.success('Cập nhật Offer', accepted ? 'Ứng viên đã chấp nhận Offer. Đủ điều kiện chuyển Onboarding!' : 'Đã ghi nhận ứng viên từ chối Offer.');
     };
 

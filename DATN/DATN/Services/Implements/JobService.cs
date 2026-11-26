@@ -421,7 +421,9 @@ public class JobService : IJobService
             .Select(u => new { u.CompanyName })
             .FirstOrDefaultAsync();
         
-        string sysCompanyName = adminUser?.CompanyName ?? "Unknown Company";
+        string sysCompanyName = !string.IsNullOrWhiteSpace(adminUser?.CompanyName) && !adminUser.CompanyName.Contains("V9", StringComparison.OrdinalIgnoreCase) && !adminUser.CompanyName.Contains("Unknown", StringComparison.OrdinalIgnoreCase)
+            ? adminUser.CompanyName
+            : "ATS Industrial - Khu Công Nghiệp";
 
         // Map sang DTO
         var result = jobs.Select(j => new JobHomeDto
@@ -486,7 +488,9 @@ public class JobService : IJobService
             .Select(u => new { u.CompanyName })
             .FirstOrDefaultAsync();
         
-        string sysCompanyName = adminUser?.CompanyName ?? "Unknown Company";
+        string sysCompanyName = !string.IsNullOrWhiteSpace(adminUser?.CompanyName) && !adminUser.CompanyName.Contains("V9", StringComparison.OrdinalIgnoreCase) && !adminUser.CompanyName.Contains("Unknown", StringComparison.OrdinalIgnoreCase)
+            ? adminUser.CompanyName
+            : "ATS Industrial - Khu Công Nghiệp";
 
         // Map sang DTO
         var result = new JobDetailDto
@@ -604,7 +608,9 @@ public class JobService : IJobService
             .Select(u => new { u.CompanyName, u.CompanyLogoUrl })
             .FirstOrDefaultAsync();
         
-        string sysCompanyName = adminUser?.CompanyName ?? "Unknown Company";
+        string sysCompanyName = !string.IsNullOrWhiteSpace(adminUser?.CompanyName) && !adminUser.CompanyName.Contains("V9", StringComparison.OrdinalIgnoreCase) && !adminUser.CompanyName.Contains("Unknown", StringComparison.OrdinalIgnoreCase)
+            ? adminUser.CompanyName
+            : "ATS Industrial - Khu Công Nghiệp";
         string sysCompanyLogo = adminUser?.CompanyLogoUrl ?? "";
 
         // Projection to DTO

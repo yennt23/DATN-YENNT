@@ -160,8 +160,19 @@ public class OnboardingController : ControllerBase
                 var normalizedStatus = a.ConvertedEmployeeCode != null ? "Hired"
                     : string.Equals(a.Status, "HIRED", StringComparison.OrdinalIgnoreCase) ? "Hired"
                     : string.Equals(a.Status, "Waitlisted", StringComparison.OrdinalIgnoreCase) || string.Equals(a.Status, "WAITLIST", StringComparison.OrdinalIgnoreCase) ? "Waitlisted"
-                    : string.Equals(a.Status, "No_Show_Cancelled", StringComparison.OrdinalIgnoreCase) ? "No_Show_Cancelled"
+                    : string.Equals(a.Status, "No_Show_Cancelled", StringComparison.OrdinalIgnoreCase)
+                      || string.Equals(a.Status, "Offer_Declined", StringComparison.OrdinalIgnoreCase)
+                      || string.Equals(a.OfferStatus, "Offer_Declined", StringComparison.OrdinalIgnoreCase)
+                      || string.Equals(a.Status, "REJECTED", StringComparison.OrdinalIgnoreCase) ? "No_Show_Cancelled"
                     : "InterviewPassed";
+
+                var normalizedOfferStatus = string.Equals(a.OfferStatus, "Offer_Accepted", StringComparison.OrdinalIgnoreCase) || string.Equals(a.Status, "OFFER_ACCEPTED", StringComparison.OrdinalIgnoreCase)
+                    ? "Offer_Accepted"
+                    : string.Equals(a.OfferStatus, "Offer_Declined", StringComparison.OrdinalIgnoreCase) || string.Equals(a.Status, "Offer_Declined", StringComparison.OrdinalIgnoreCase) || (string.Equals(a.Status, "REJECTED", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(a.OfferStatus) && a.OfferStatus != "Not_Required")
+                        ? "Offer_Declined"
+                        : string.Equals(a.OfferStatus, "Offer_Sent", StringComparison.OrdinalIgnoreCase) || string.Equals(a.Status, "Offer_Sent", StringComparison.OrdinalIgnoreCase)
+                            ? "Offer_Sent"
+                            : (a.OfferStatus ?? "Not_Required");
 
                 var track = !string.IsNullOrWhiteSpace(a.Job?.RecruitmentTrack)
                     ? a.Job!.RecruitmentTrack
@@ -200,9 +211,9 @@ public class OnboardingController : ControllerBase
                     Status = normalizedStatus,
                     Probation30DayStatus = a.Probation30DayStatus,
                     OfferedDate = a.LastStageChangedAt != default ? a.LastStageChangedAt : a.AppliedAt,
-                    OfferStatus = a.OfferStatus ?? "Not_Required",
+                    OfferStatus = normalizedOfferStatus,
                     OfferedSalary = a.OfferedSalary,
-                    OfferResponseNote = a.OfferResponseNote,
+                    OfferResponseNote = a.OfferResponseNote ?? (normalizedOfferStatus == "Offer_Declined" ? "Ứng viên đã từ chối Offer" : null),
                     JobTargetQuantity = a.Job?.TargetQuantity > 0 ? a.Job.TargetQuantity : 100,
                     JobHiredCount = a.Job?.HiredCount ?? 0,
                     JobWaitlistBufferPercent = a.Job?.WaitlistBufferPercent > 0 ? a.Job.WaitlistBufferPercent : 15
