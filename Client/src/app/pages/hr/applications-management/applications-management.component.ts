@@ -251,20 +251,18 @@ export class ApplicationsManagementComponent implements OnInit {
   // ── Computed Metrics & Filtered Data ───────────────────────────────────
   counts = computed(() => {
     const all = this.applications();
-    const isActiveInScreening = (a: IndustrialApplication) =>
+    const isVisibleInAll = (a: IndustrialApplication) =>
       !a.isInTalentPool &&
       a.status !== 'Saved_In_Talent_Pool' &&
-      !a.isRuleRejected &&
       a.status !== 'Rejected' &&
-      a.status !== 'InterviewPassed' &&
       a.status !== 'Hired' &&
       !a.convertedEmployeeCode;
 
     return {
-      all: all.filter(isActiveInScreening).length,
-      professional: all.filter(a => a.recruitmentTrack === 'PROFESSIONAL' && isActiveInScreening(a)).length,
-      massLabor: all.filter(a => a.recruitmentTrack === 'MASS_LABOR' && isActiveInScreening(a)).length,
-      fastTrack: all.filter(a => a.recruitmentTrack === 'MASS_LABOR' && isActiveInScreening(a)).length,
+      all: all.filter(isVisibleInAll).length,
+      professional: all.filter(a => a.recruitmentTrack === 'PROFESSIONAL' && isVisibleInAll(a)).length,
+      massLabor: all.filter(a => a.recruitmentTrack === 'MASS_LABOR' && isVisibleInAll(a)).length,
+      fastTrack: all.filter(a => a.recruitmentTrack === 'MASS_LABOR' && isVisibleInAll(a)).length,
       onboardedOrHired: all.filter(a => a.status === 'InterviewPassed' || a.status === 'Hired' || !!a.convertedEmployeeCode).length,
       talentPool: all.filter(a => a.isInTalentPool || a.status === 'Saved_In_Talent_Pool').length,
       ruleRejected: all.filter(a => a.isRuleRejected || a.status === 'Rejected').length
@@ -286,13 +284,11 @@ export class ApplicationsManagementComponent implements OnInit {
       } else if (tab === 'RULE_REJECTED') {
         if (!app.isRuleRejected && app.status !== 'Rejected') return false;
       } else {
-        // Hồ sơ đã sang Tiếp nhận & Onboarding, Kho nhân tài hoặc Không đạt sẽ chuyển sang menu/tab tương ứng, không còn nằm ở danh sách đang chờ duyệt
+        // Hiển thị tất cả hồ sơ mới nộp (kể cả điểm AI < 50%), chỉ ẩn hồ sơ đã bị HR bấm Từ chối (Rejected), đã vào Kho nhân tài hoặc đã cấp mã NV (Hired)
         if (
           app.isInTalentPool ||
           app.status === 'Saved_In_Talent_Pool' ||
-          app.isRuleRejected ||
           app.status === 'Rejected' ||
-          app.status === 'InterviewPassed' ||
           app.status === 'Hired' ||
           !!app.convertedEmployeeCode
         ) {
@@ -465,8 +461,7 @@ export class ApplicationsManagementComponent implements OnInit {
 
   private mapApiItemToIndustrial(item: any, idx: number, mockItems: IndustrialApplication[] = []): IndustrialApplication {
     const matchedTemplate = mockItems.find(
-      m => m.applicationId.toLowerCase() === String(item.applicationId || '').toLowerCase() ||
-           (item.phone && m.phone === String(item.phone).trim())
+      m => m.applicationId.toLowerCase() === String(item.applicationId || '').toLowerCase()
     );
     const hasPdf = !!(item.cvFileUrl || item.cvUrl || matchedTemplate?.cvFileUrl);
     const source: ApplicationSource = item.applicationSource
@@ -1846,6 +1841,8 @@ Bộ phận Tuyển dụng Nhân sự`
   }
 
   // ── Adaptive Slide-over Drawer ─────────────────────────────────────────
+  private pdfUrlCache = new Map<string, SafeResourceUrl>();
+
   openDrawer(app: IndustrialApplication): void {
     this.selectedApp.set(app);
     this.isDrawerOpen.set(true);
@@ -1856,13 +1853,23 @@ Bộ phận Tuyển dụng Nhân sự`
   }
 
   getSafePdfUrl(url: string | null): SafeResourceUrl {
-    if (!url) return this.sanitizer.bypassSecurityTrustResourceUrl('about:blank');
+    if (!url) {
+      const blankKey = '__blank__';
+      if (!this.pdfUrlCache.has(blankKey)) {
+        this.pdfUrlCache.set(blankKey, this.sanitizer.bypassSecurityTrustResourceUrl('about:blank'));
+      }
+      return this.pdfUrlCache.get(blankKey)!;
+    }
     let clean = url.trim();
     if (!clean.startsWith('http')) {
       const sub = clean.startsWith('/') ? clean.substring(1) : clean;
       clean = `/${sub}`;
     }
-    return this.sanitizer.bypassSecurityTrustResourceUrl(`${clean}#toolbar=1&view=FitH`);
+    const finalUrl = `${clean}#toolbar=1&view=FitH`;
+    if (!this.pdfUrlCache.has(finalUrl)) {
+      this.pdfUrlCache.set(finalUrl, this.sanitizer.bypassSecurityTrustResourceUrl(finalUrl));
+    }
+    return this.pdfUrlCache.get(finalUrl)!;
   }
 
   openCvInNewTab(url: string | null): void {

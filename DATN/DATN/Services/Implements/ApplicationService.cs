@@ -317,14 +317,31 @@ public class ApplicationService : IApplicationService
                             throw new ArgumentException("User không tồn tại");
                         }
 
-                        candidate = await _context.Candidates.FirstOrDefaultAsync(c => c.UserId == userId.Value)
-                            ?? throw new ArgumentException("Candidate profile không tồn tại");
-
-                        // Cập nhật thông tin liên hệ mới nhất của ứng viên nếu có
-                        if (!string.IsNullOrWhiteSpace(request.FullName)) candidate.FullName = request.FullName.Trim();
-                        if (!string.IsNullOrWhiteSpace(request.Phone)) candidate.Phone = request.Phone.Trim();
-                        if (!string.IsNullOrWhiteSpace(request.Email)) candidate.Email = request.Email.Trim();
-                        candidate.UpdatedAt = DateTime.UtcNow;
+                        var existingCandidate = await _context.Candidates.FirstOrDefaultAsync(c => c.UserId == userId.Value);
+                        if (existingCandidate == null)
+                        {
+                            candidate = new Entities.Candidate
+                            {
+                                CandidateId = Guid.NewGuid(),
+                                UserId = userId.Value,
+                                FullName = request.FullName?.Trim() ?? user.FullName ?? "Ứng viên",
+                                Email = request.Email?.Trim() ?? user.Email ?? "",
+                                Phone = request.Phone?.Trim() ?? user.Phone ?? "",
+                                Summary = request.Introduction?.Trim(),
+                                CreatedAt = DateTime.UtcNow
+                            };
+                            _context.Candidates.Add(candidate);
+                        }
+                        else
+                        {
+                            candidate = existingCandidate;
+                            // Cập nhật thông tin liên hệ mới nhất của ứng viên nếu có
+                            if (!string.IsNullOrWhiteSpace(request.FullName)) candidate.FullName = request.FullName.Trim();
+                            if (!string.IsNullOrWhiteSpace(request.Phone)) candidate.Phone = request.Phone.Trim();
+                            if (!string.IsNullOrWhiteSpace(request.Email)) candidate.Email = request.Email.Trim();
+                            if (!string.IsNullOrWhiteSpace(request.Introduction)) candidate.Summary = request.Introduction.Trim();
+                            candidate.UpdatedAt = DateTime.UtcNow;
+                        }
                     }
                     else
                     {
@@ -336,6 +353,7 @@ public class ApplicationService : IApplicationService
                             FullName = request.FullName?.Trim() ?? "Guest",
                             Email = request.Email?.Trim() ?? "",
                             Phone = request.Phone?.Trim() ?? "",
+                            Summary = request.Introduction?.Trim(),
                             CreatedAt = DateTime.UtcNow
                         };
 
@@ -473,7 +491,8 @@ public class ApplicationService : IApplicationService
                         PhoneNormalized = request.Phone?.Trim() ?? candidate.Phone,
                         ApplicationSource = "PDF_UPLOAD",
                         ScoringMethod = (job.RecruitmentTrack == "MASS_LABOR" ? "RULE_ENGINE" : "GEMINI_AI"),
-                        CvFileUrl = finalCvUrl
+                        CvFileUrl = finalCvUrl,
+                        RawResumeText = request.Introduction?.Trim()
                     };
 
                     _context.Applications.Add(application);

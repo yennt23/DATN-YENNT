@@ -40,6 +40,9 @@ export interface OnboardingRecord {
   status: OnboardingStatus;
   offeredDate: string;
   noShowReason?: string;
+  offerStatus?: string | null;
+  offeredSalary?: number | null;
+  offerResponseNote?: string | null;
 
   // ── V5 Factory & HR Operations (Probation 30-Day Feedback) ──
   probation30DayStatus?: string | null; // 'Not_Started' | 'In_Probation' | 'Passed_30Days' | 'Early_Resigned'
@@ -87,6 +90,13 @@ export class OnboardingManagementComponent implements OnInit {
   noShowCompleted = signal<boolean>(false);
   revokedCodeSnapshot = signal<string | null>(null);
   suggestedWaitlistCandidate = signal<OnboardingRecord | null>(null);
+
+  // Modal: Gửi Offer Letter & Chốt Lương Thỏa Thuận
+  showOfferModal = signal<boolean>(false);
+  offerTarget = signal<OnboardingRecord | null>(null);
+  offeredSalary = signal<number>(15000000);
+  offerNote = signal<string>('');
+  isSendingOffer = signal<boolean>(false);
 
   readonly bankOptions = [
     'Vietcombank',
@@ -248,6 +258,9 @@ export class OnboardingManagementComponent implements OnInit {
       aiMatchingScore: item.aiMatchingScore ?? 88,
       status,
       offeredDate: item.offeredDate ? new Date(item.offeredDate).toLocaleDateString('vi-VN') : '06/11/2026',
+      offerStatus: item.offerStatus || 'Not_Required',
+      offeredSalary: item.offeredSalary ?? null,
+      offerResponseNote: item.offerResponseNote ?? null,
       probation30DayStatus: item.probation30DayStatus || (item.convertedEmployeeCode ? 'In_Probation' : 'Not_Started')
     };
   }
@@ -474,6 +487,92 @@ export class OnboardingManagementComponent implements OnInit {
     this.showNoShowModal.set(false);
     this.noShowTarget.set(null);
     this.noShowCompleted.set(false);
+  }
+
+  // ── Gửi Offer Letter & Phản hồi Offer trực tiếp tại màn hình Tiếp Nhận & Onboarding ──
+  openOfferModal(item: OnboardingRecord): void {
+    this.offerTarget.set(item);
+    const defaultSalary = item.offeredSalary || (item.recruitmentTrack === 'PROFESSIONAL' ? 18000000 : 9500000);
+    this.offeredSalary.set(defaultSalary);
+    this.offerNote.set(
+      item.offerResponseNote ||
+      (item.recruitmentTrack === 'PROFESSIONAL'
+        ? `Thư mời nhận việc vị trí ${item.jobTitle} (${item.departmentName}). Lương thỏa thuận + phụ cấp chuyên cần & ăn ca.`
+        : `Thư mời nhận việc vị trí ${item.jobTitle} (${item.departmentName} - ${item.lineAssignment}). Hưởng đầy đủ phụ cấp ca kíp, chuyên cần và BHXH.`)
+    );
+    this.showOfferModal.set(true);
+  }
+
+  closeOfferModal(): void {
+    this.showOfferModal.set(false);
+    this.offerTarget.set(null);
+  }
+
+  confirmSendOffer(): void {
+    const target = this.offerTarget();
+    if (!target || this.offeredSalary() <= 0) {
+      this.toast.warning('Thiếu thông tin', 'Mức lương đề nghị trong Offer phải lớn hơn 0.');
+      return;
+    }
+
+    this.isSendingOffer.set(true);
+    const salary = this.offeredSalary();
+    const note = this.offerNote().trim();
+
+    this.http.post<any>(`${environment.apiUrl}/applications/${target.applicationId}/send-offer`, {
+      offeredSalary: salary,
+      note
+    }).subscribe({
+      next: (res) => {
+        this.isSendingOffer.set(false);
+        this.records.update(list =>
+          list.map(r =>
+            r.applicationId === target.applicationId
+              ? { ...r, offerStatus: 'Offer_Sent', offeredSalary: salary, offerResponseNote: note }
+              : r
+          )
+        );
+        this.closeOfferModal();
+        this.toast.success(
+          'Đã gửi Offer Letter',
+          res?.message || `Đã gửi Offer với mức lương ${salary.toLocaleString('vi-VN')} VNĐ cho ${target.fullName}.`
+        );
+      },
+      error: (err) => {
+        this.isSendingOffer.set(false);
+        this.toast.error('Lỗi gửi Offer', err?.error?.message || 'Không thể gửi Offer Letter.');
+      }
+    });
+  }
+
+  respondOfferStatus(item: OnboardingRecord, accepted: boolean): void {
+    const note = accepted
+      ? 'Ứng viên đã đồng ý nhận Offer và xác nhận ngày đi làm'
+      : 'Ứng viên từ chối Offer';
+
+    this.http.post<any>(`${environment.apiUrl}/applications/${item.applicationId}/respond-offer`, {
+      accepted,
+      responseNote: note
+    }).subscribe({
+      next: () => {
+        this.records.update(list =>
+          list.map(r =>
+            r.applicationId === item.applicationId
+              ? { ...r, offerStatus: accepted ? 'Offer_Accepted' : 'Offer_Declined', offerResponseNote: note }
+              : r
+          )
+        );
+        this.toast.success(
+          'Đã cập nhật trạng thái Offer',
+          accepted
+            ? `${item.fullName} đã đồng ý Offer! Có thể tiến hành Cấp mã NV.`
+            : `Đã ghi nhận ${item.fullName} từ chối Offer.`
+        );
+      },
+      error: (err) => {
+        this.toast.error('Lỗi cập nhật Offer', err?.error?.message || 'Không thể cập nhật phản hồi Offer.');
+      }
+    });
   }
 
   confirmMarkNoShow(): void {

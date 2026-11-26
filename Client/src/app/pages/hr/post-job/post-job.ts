@@ -114,7 +114,7 @@ export class PostJob implements OnInit {
       description: ['', [Validators.required, Validators.minLength(50), Validators.maxLength(4000)]],
       requirements: ['', [Validators.maxLength(4000)]],
       benefits: ['', [Validators.maxLength(4000)]],
-      numberOfPositions: [null, [Validators.min(1)]],
+      numberOfPositions: [null, [Validators.required, Validators.min(1), Validators.max(1000)]],
       createCampaignQr: [false],
       requireNightShift: [false],
       requisitionNote: [''],
@@ -352,7 +352,7 @@ export class PostJob implements OnInit {
       description: formValue.description,
       requirements: formValue.requirements,
       benefits: formValue.benefits,
-      numberOfPositions: formValue.numberOfPositions ? Number(formValue.numberOfPositions) : undefined,
+      numberOfPositions: Number(formValue.numberOfPositions),
       salaryMin: formValue.salaryMin ? Number(formValue.salaryMin) : undefined,
       salaryMax: formValue.salaryMax ? Number(formValue.salaryMax) : undefined,
       location: fullAddress,  // Lưu địa chỉ đầy đủ: "Phường X, Tỉnh Y" (V2 API)
@@ -365,7 +365,7 @@ export class PostJob implements OnInit {
       requireNightShift: !!formValue.requireNightShift,
       requisitionNote: formValue.requisitionNote || '',
       recruitmentTrack: formValue.recruitmentTrack || 'PROFESSIONAL',
-      targetQuantity: formValue.targetQuantity ? Number(formValue.targetQuantity) : 50
+      targetQuantity: Number(formValue.numberOfPositions)
     };
 
     this.isSubmitting = true;

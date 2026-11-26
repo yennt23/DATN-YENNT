@@ -15,6 +15,8 @@ public class UpdateJobRequest
 
     public string? Benefits { get; set; }
 
+    [Required(ErrorMessage = "Số lượng tuyển là bắt buộc")]
+    [Range(1, 1000, ErrorMessage = "Số lượng tuyển tối thiểu là 1")]
     public int? NumberOfPositions { get; set; }
 
     public decimal? SalaryMin { get; set; }

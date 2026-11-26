@@ -251,13 +251,18 @@
       </div>
       <div class="col-span-1 space-y-2">
         <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200" for="numberOfPositions">Số Lượng
-          Tuyển</label>
+          Tuyển <span class="text-red-500">*</span></label>
         <input formControlName="numberOfPositions"
           class="w-full rounded-lg border border-[#cfd7e7] dark:border-gray-600 bg-background-light dark:bg-background-dark px-4 py-3 text-sm text-[#0d121b] dark:text-white placeholder:text-[#4c669a] focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all"
           [class.border-red-500]="jobForm.get('numberOfPositions')?.invalid && jobForm.get('numberOfPositions')?.touched"
-          id="numberOfPositions" placeholder="VD: 2" type="number" min="1" />
-        <div *ngIf="jobForm.get('numberOfPositions')?.errors?.['min'] && jobForm.get('numberOfPositions')?.touched"
-          class="text-sm text-red-500 mt-1">Số lượng tuyển phải từ 1 trở lên</div>
+          (wheel)="$any($event.target).blur()"
+          id="numberOfPositions" placeholder="VD: 2" type="number" min="1" max="1000" step="1" />
+        <div *ngIf="jobForm.get('numberOfPositions')?.invalid && jobForm.get('numberOfPositions')?.touched"
+          class="text-sm text-red-500 mt-1">
+          <span *ngIf="jobForm.get('numberOfPositions')?.errors?.['required']">Số lượng tuyển là bắt buộc</span>
+          <span *ngIf="jobForm.get('numberOfPositions')?.errors?.['min']">Số lượng tuyển phải từ 1 trở lên</span>
+          <span *ngIf="jobForm.get('numberOfPositions')?.errors?.['max']">Số lượng tuyển không vượt quá 1000</span>
+        </div>
       </div>
       <div class="col-span-1 md:col-span-2 space-y-3">
         <label class="text-sm font-medium text-[#0d121b] dark:text-gray-200">Tay Nghề/Kỹ Năng Công Việc <span

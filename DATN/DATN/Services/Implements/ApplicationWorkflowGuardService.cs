@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using UglyToad.PdfPig;
 using DATN.Data;
 using DATN.Entities;
+using DATN.Services.Interfaces;
 
 namespace DATN.Services.Implements;
 
@@ -142,13 +143,16 @@ public class ApplicationWorkflowGuardService : IApplicationWorkflowGuardService
 {
     private readonly DATNContext _context;
     private readonly ILogger<ApplicationWorkflowGuardService> _logger;
+    private readonly IEmailService _emailService;
 
     public ApplicationWorkflowGuardService(
         DATNContext context,
-        ILogger<ApplicationWorkflowGuardService> logger)
+        ILogger<ApplicationWorkflowGuardService> logger,
+        IEmailService emailService)
     {
         _context = context;
         _logger = logger;
+        _emailService = emailService;
     }
 
     // =========================================================================================
@@ -368,8 +372,11 @@ public class ApplicationWorkflowGuardService : IApplicationWorkflowGuardService
             _logger.LogWarning(ex, "⚠️ [PDF GUARD] Không thể đọc cấu trúc PDF cho Application {AppId}", application.ApplicationId);
         }
 
+        var existingIntro = (application.RawResumeText ?? string.Empty).Trim();
         var extractedText = extractedBuilder.ToString().Trim();
-        application.RawResumeText = extractedText;
+        application.RawResumeText = !string.IsNullOrWhiteSpace(existingIntro) && !extractedText.Contains(existingIntro, StringComparison.OrdinalIgnoreCase)
+            ? $"Giới thiệu: {existingIntro}\n{extractedText}".Trim()
+            : (!string.IsNullOrWhiteSpace(extractedText) ? extractedText : existingIntro);
 
         // Nếu text bóc ra < 50 ký tự -> File PDF scan dạng ảnh hoặc lỗi font không đọc được
         if (extractedText.Length < 50)
@@ -993,7 +1000,9 @@ public class ApplicationWorkflowGuardService : IApplicationWorkflowGuardService
         Guid? actorUserId)
     {
         var application = await _context.Applications
+            .Include(a => a.Candidate)
             .Include(a => a.Job)
+                .ThenInclude(j => j.DepartmentNavigation)
             .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
 
         if (application == null)
@@ -1018,7 +1027,50 @@ public class ApplicationWorkflowGuardService : IApplicationWorkflowGuardService
         });
 
         await _context.SaveChangesAsync();
-        return (true, $"Đã gửi Offer Letter thành công với mức lương {offeredSalary:N0} VNĐ.");
+
+        var candidateEmail = application.ContactEmail ?? application.Candidate?.Email;
+        var candidateName = application.ContactName ?? application.Candidate?.FullName ?? "Ứng viên";
+        var jobTitle = application.Job?.Title ?? "Vị trí tuyển dụng";
+        var departmentName = application.Job?.DepartmentNavigation?.DepartmentName ?? application.Job?.Department ?? "Phòng ban";
+
+        bool emailSent = false;
+        if (!string.IsNullOrWhiteSpace(candidateEmail) && candidateEmail.Contains("@") && !candidateEmail.EndsWith(".local", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var subject = $"[THƯ MỜI NHẬN VIỆC / OFFER LETTER] Chúc mừng {candidateName} trúng tuyển vị trí {jobTitle}";
+                var htmlBody = $@"
+<div style=""font-family: 'Segoe UI', Arial, sans-serif; max-width: 640px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;"">
+  <div style=""background: linear-gradient(135deg, #0f172a, #1e3a8a); color: #ffffff; padding: 24px;"">
+    <h2 style=""margin: 0; font-size: 20px;"">🎉 THƯ MỜI NHẬN VIỆC (OFFER LETTER)</h2>
+    <p style=""margin: 6px 0 0; font-size: 13px; opacity: 0.9;"">Phòng Nhân sự &amp; Tuyển dụng trân trọng thông báo kết quả trúng tuyển</p>
+  </div>
+  <div style=""padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"">
+    <p>Chào <strong>{candidateName}</strong>,</p>
+    <p>Chúc mừng bạn đã vượt qua kỳ phỏng vấn và chính thức trúng tuyển vào vị trí <strong>{jobTitle}</strong> thuộc <strong>{departmentName}</strong>.</p>
+    <div style=""background: #f8fafc; border-left: 4px solid #f59e0b; padding: 16px; border-radius: 8px; margin: 16px 0;"">
+      <p style=""margin: 0 0 8px;""><strong>📌 THÔNG TIN CHẾ ĐỘ &amp; ĐỀ NGHỊ TIẾP NHẬN:</strong></p>
+      <p style=""margin: 4px 0;"">• <strong>Vị trí tiếp nhận:</strong> {jobTitle}</p>
+      <p style=""margin: 4px 0;"">• <strong>Bộ phận / Phân xưởng:</strong> {departmentName}</p>
+      <p style=""margin: 4px 0;"">• <strong>Mức lương thỏa thuận:</strong> <span style=""color: #d97706; font-weight: bold;"">{offeredSalary:N0} VNĐ / tháng</span></p>
+      <p style=""margin: 8px 0 0; white-space: pre-line;"">• <strong>Nội dung chi tiết &amp; Quyền lợi:</strong><br/>{System.Net.WebUtility.HtmlEncode(note ?? "Theo quy định hiện hành của công ty.")}</p>
+    </div>
+    <p>Vui lòng phản hồi lại email này hoặc liên hệ trực tiếp bộ phận Nhân sự để xác nhận lịch nhận việc và hoàn tất hồ sơ khám sức khỏe / CCCD.</p>
+    <p style=""margin-top: 20px;"">Trân trọng,<br/><strong>Bộ phận Tuyển dụng Nhân sự</strong></p>
+  </div>
+</div>";
+                await _emailService.SendEmailAsync(candidateEmail.Trim(), subject, htmlBody);
+                emailSent = true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Không thể gửi email Offer Letter tới {Email}", candidateEmail);
+            }
+        }
+
+        return (true, emailSent
+            ? $"Đã gửi Offer Letter qua email ({candidateEmail}) với mức lương {offeredSalary:N0} VNĐ."
+            : $"Đã lưu Offer Letter với mức lương {offeredSalary:N0} VNĐ.");
     }
 
     public async Task<(bool Success, string Message)> RespondOfferAsync(

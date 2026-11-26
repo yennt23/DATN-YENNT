@@ -23,6 +23,7 @@ public class CreateJobRequest : IValidatableObject
     [StringLength(4000)]
     public string? Benefits { get; set; }
 
+    [Required(ErrorMessage = "Số lượng tuyển là bắt buộc")]
     [Range(1, 1000, ErrorMessage = "Số lượng tuyển tối thiểu là 1")]
     public int? NumberOfPositions { get; set; }
 

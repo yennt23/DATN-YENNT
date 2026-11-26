@@ -64,6 +64,9 @@ public class OnboardingController : ControllerBase
         public string? Probation30DayStatus { get; set; }
         public string? ProbationFeedbackNote { get; set; }
         public DateTime? OfferedDate { get; set; }
+        public string? OfferStatus { get; set; }
+        public decimal? OfferedSalary { get; set; }
+        public string? OfferResponseNote { get; set; }
         public int JobTargetQuantity { get; set; } = 100;
         public int JobHiredCount { get; set; } = 0;
         public int JobWaitlistBufferPercent { get; set; } = 15;
@@ -197,6 +200,9 @@ public class OnboardingController : ControllerBase
                     Status = normalizedStatus,
                     Probation30DayStatus = a.Probation30DayStatus,
                     OfferedDate = a.LastStageChangedAt != default ? a.LastStageChangedAt : a.AppliedAt,
+                    OfferStatus = a.OfferStatus ?? "Not_Required",
+                    OfferedSalary = a.OfferedSalary,
+                    OfferResponseNote = a.OfferResponseNote,
                     JobTargetQuantity = a.Job?.TargetQuantity > 0 ? a.Job.TargetQuantity : 100,
                     JobHiredCount = a.Job?.HiredCount ?? 0,
                     JobWaitlistBufferPercent = a.Job?.WaitlistBufferPercent > 0 ? a.Job.WaitlistBufferPercent : 15

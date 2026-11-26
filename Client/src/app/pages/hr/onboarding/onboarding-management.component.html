@@ -384,18 +384,48 @@
                       <div class="text-[11px] text-slate-500 mt-0.5 max-w-[160px] truncate" [title]="item.noShowReason">{{ item.noShowReason }}</div>
                     }
                   } @else {
-                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
-                      Chờ cấp mã NV
-                    </span>
-                    @if (item.recruitmentTrack === 'PROFESSIONAL') {
-                      <label class="mt-1 flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer whitespace-nowrap">
-                        <input
-                          type="checkbox"
-                          [(ngModel)]="item.createSystemAccount"
-                          class="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                        <span>Kèm tài khoản ATS</span>
-                      </label>
-                    }
+                    <div class="space-y-1">
+                      <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+                        Chờ cấp mã NV
+                      </span>
+
+                      @if (item.offerStatus === 'Offer_Sent') {
+                        <div class="flex items-center gap-1 flex-wrap">
+                          <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-300 whitespace-nowrap">
+                            📨 Đã gửi Offer {{ item.offeredSalary ? '(' + (item.offeredSalary | number) + 'đ)' : '' }}
+                          </span>
+                          <button
+                            type="button"
+                            (click)="respondOfferStatus(item, true)"
+                            class="px-1.5 py-0.5 rounded bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-semibold cursor-pointer whitespace-nowrap"
+                            title="Xác nhận ứng viên đã đồng ý nhận Offer">
+                            ✓ UV Đồng ý
+                          </button>
+                        </div>
+                      } @else if (item.offerStatus === 'Offer_Accepted') {
+                        <div>
+                          <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+                            ✅ Đã nhận Offer {{ item.offeredSalary ? '(' + (item.offeredSalary | number) + 'đ)' : '' }}
+                          </span>
+                        </div>
+                      } @else if (item.offerStatus === 'Offer_Declined') {
+                        <div>
+                          <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
+                            ❌ Từ chối Offer
+                          </span>
+                        </div>
+                      }
+
+                      @if (item.recruitmentTrack === 'PROFESSIONAL') {
+                        <label class="mt-1 flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            [(ngModel)]="item.createSystemAccount"
+                            class="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                          <span>Kèm tài khoản ATS</span>
+                        </label>
+                      }
+                    </div>
                   }
                 </td>
 
@@ -404,6 +434,14 @@
                   <div class="inline-flex flex-col items-end gap-1.5">
                     <div class="flex items-center justify-end gap-1.5 whitespace-nowrap">
                       @if (item.status === 'InterviewPassed' && !item.convertedEmployeeCode) {
+                        <button
+                          type="button"
+                          (click)="openOfferModal(item)"
+                          class="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold shadow-2xs transition cursor-pointer whitespace-nowrap flex items-center gap-1">
+                          <span>📧</span>
+                          <span>{{ item.offerStatus === 'Offer_Sent' || item.offerStatus === 'Offer_Accepted' ? 'Gửi lại Offer' : 'Gửi Offer' }}</span>
+                        </button>
+
                         <button
                           type="button"
                           (click)="convertSingleCandidate(item)"
@@ -635,6 +673,84 @@
               (click)="copySelfServiceLink()"
               class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shrink-0 cursor-pointer">
               Sao chép
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ═══════════════════════════════════════════════════════════════════════════
+       8. MODAL GỬI OFFER LETTER & CHỐT LƯƠNG THỎA THUẬN CHO ỨNG VIÊN TRÚNG TUYỂN
+       ═══════════════════════════════════════════════════════════════════════════ -->
+  @if (showOfferModal() && offerTarget(); as offerCandidate) {
+    <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4" (click)="closeOfferModal()">
+      <div class="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden" (click)="$event.stopPropagation()">
+        <div class="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center text-sm font-bold">📧</span>
+            <div>
+              <h3 class="font-bold text-sm sm:text-base">Gửi Thư Mời Nhận Việc (Offer Letter)</h3>
+              <p class="text-[11px] text-slate-300">Chốt mức lương thỏa thuận &amp; gửi thông báo trúng tuyển qua Email</p>
+            </div>
+          </div>
+          <button type="button" (click)="closeOfferModal()" class="text-white/80 hover:text-white text-lg cursor-pointer">✕</button>
+        </div>
+
+        <div class="p-6 space-y-4 text-xs">
+          <div class="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 space-y-1">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-sm text-slate-900">{{ offerCandidate.fullName }}</span>
+              <span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold text-[11px]">
+                {{ offerCandidate.recruitmentTrack === 'PROFESSIONAL' ? 'Khối Kỹ thuật / Văn phòng' : 'Khối Sản xuất' }}
+              </span>
+            </div>
+            <p class="text-slate-600">• Vị trí: <strong>{{ offerCandidate.jobTitle }}</strong> ({{ offerCandidate.departmentName }})</p>
+            <p class="text-slate-600">• Liên hệ: <strong>{{ offerCandidate.phone }}</strong> — Email: <strong>{{ offerCandidate.email || 'Chưa cập nhật email' }}</strong></p>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">
+              Mức lương chính thức đề nghị (VNĐ / tháng) *:
+            </label>
+            <input
+              type="number"
+              step="500000"
+              min="1000000"
+              [ngModel]="offeredSalary()"
+              (ngModelChange)="offeredSalary.set(+$event)"
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-bold text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+            <p class="text-[11px] text-slate-500 mt-1">
+              Hiển thị trong thư mời: <strong class="text-slate-800">{{ offeredSalary() | number }} VNĐ / tháng</strong>
+            </p>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">
+              Nội dung chi tiết Offer &amp; Chế độ đãi ngộ (Gửi kèm trong Email) *:
+            </label>
+            <textarea
+              rows="4"
+              [ngModel]="offerNote()"
+              (ngModelChange)="offerNote.set($event)"
+              placeholder="Nhập mức lương, phụ cấp, thời gian nhận việc và giấy tờ cần chuẩn bị..."
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-amber-500"></textarea>
+          </div>
+
+          <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              (click)="closeOfferModal()"
+              class="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold hover:bg-slate-100 cursor-pointer">
+              Hủy
+            </button>
+            <button
+              type="button"
+              [disabled]="isSendingOffer() || offeredSalary() <= 0"
+              (click)="confirmSendOffer()"
+              class="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold shadow-sm transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5">
+              <span>📧</span>
+              <span>{{ isSendingOffer() ? 'Đang gửi Offer...' : 'Xác nhận & Gửi Offer Letter' }}</span>
             </button>
           </div>
         </div>

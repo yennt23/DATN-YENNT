@@ -59,7 +59,9 @@ public class JobService : IJobService
                 CreatedBy = userId,
                 RequestedByUserId = userId,
                 RecruitmentTrack = request.RecruitmentTrack ?? "PROFESSIONAL",
-                TargetQuantity = request.TargetQuantity > 0 ? request.TargetQuantity : 50,
+                TargetQuantity = request.NumberOfPositions.HasValue && request.NumberOfPositions.Value > 0
+                    ? request.NumberOfPositions.Value
+                    : (request.TargetQuantity > 0 ? request.TargetQuantity : 1),
                 HiredCount = 0,
                 WaitlistBufferPercent = 15,
                 CurrentScoringWeightVersion = 1,
@@ -189,6 +191,10 @@ public class JobService : IJobService
             job.Requirements = request.Requirements;
             job.Benefits = request.Benefits;
             job.NumberOfPositions = request.NumberOfPositions;
+            if (request.NumberOfPositions.HasValue && request.NumberOfPositions.Value > 0)
+            {
+                job.TargetQuantity = request.NumberOfPositions.Value;
+            }
             job.SalaryMin = request.SalaryMin;
             job.SalaryMax = request.SalaryMax;
             job.Location = request.Location;
@@ -662,8 +668,8 @@ public class JobService : IJobService
                 Deadline = j.Deadline,
                 CreatedDate = j.CreatedAt,
                 Status = j.Status,
-                NumberOfPositions = j.NumberOfPositions,
-                TotalHired = j.Applications.Count(a => a.Status == "HIRED"),
+                NumberOfPositions = j.NumberOfPositions ?? (j.TargetQuantity > 0 ? j.TargetQuantity : 1),
+                TotalHired = j.Applications.Count(a => a.Status == "HIRED" || a.Status == "Hired" || a.ConvertedEmployeeCode != null),
                 Skills = j.JobSkillMaps.Select(jsm => jsm.Skill.Name).ToList(),
                 // Audit Trail
                 ClosedByName = j.ClosedByName,
